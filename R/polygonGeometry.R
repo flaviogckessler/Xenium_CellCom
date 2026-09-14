@@ -81,6 +81,7 @@ a <- ggplot(nodes, aes(x="",y=area))+
   geom_violin()+
   geom_boxplot(width = 0.1, color = "black", alpha = 0.5)+
   labs(x = NULL)
+a
 ####
 # 2. Calculate the max distance polygon diameter
 # Define function
@@ -104,6 +105,7 @@ md <- ggplot(nodes, aes(x="",y=maxDist))+
   geom_violin()+
   geom_boxplot(width = 0.1, color = "black", alpha = 0.5)+
   labs(x = NULL)
+
 ####
 # 3. Calculate the perimeter
 nodes$perimeter <- st_perimeter(nodes$geometry)
@@ -299,61 +301,13 @@ ggsave("images/SpearmanCorr_Gene_SpatialFeatures_RawCrop_Sig.png",g,
 # 1. NÃO USAR CROP
 # 2. NORMALIZAR DADOS PARA FAZER CORRELAÇÃO
 ##############################################
-
-ggplot(data = st_as_sf(nodes[1:9,]))+
-  geom_sf()+
-  #geom_point(aes(x=x,y=y))+
-  geom_text(aes(x=x,y=y,label = vertex))+
-  theme_minimal()
-
-intersect_list <- st_intersects(st_as_sf(nodes[1:9,]),remove_self=TRUE)
-intersect_list
-intersect_list <- st_touches(st_as_sf(nodes[1:9,]))
-intersect_list
-intersect_list <- st_crosses(st_as_sf(nodes[1:9,]))
-intersect_list
-intersect_list <- st_overlaps(st_as_sf(nodes[1:9,]))
-intersect_list
-
-intersect_list <- st_intersects(st_as_sf(nodes[1:9,]),remove_self=TRUE)
-intersect_list
-
-neighbors_df <- st_join(st_as_sf(nodes[1:9,]), st_as_sf(nodes[1:9,]), join = st_intersects,remove_self=TRUE)
-neighbors_df$status <- ifelse(is.na(neighbors_df$vertex.y), "No", "Yes")
-
-ggplot(data = neighbors_df)+
-  geom_sf(aes(fill=status))+
-  geom_text(aes(x=x.x,y=y.x,label = vertex.x))+
-  scale_fill_manual(values = c("Yes"="#2b8cbe","No"="grey"),
-                    na.value = "white")+
-  theme_minimal()+
-  labs(fill="Have Neighbor?",x="x",y="y")
-
-buffered_nodes <- st_buffer(st_as_sf(nodes[1:9,]),dist = 0.001)
-ggplot(data = buffered_nodes)+
-  geom_sf()+
-  #geom_point(aes(x=x,y=y))+
-  geom_text(aes(x=x,y=y,label = vertex))+
-  theme_minimal()
-
-neighbors_df <- st_join(buffered_nodes, buffered_nodes, join = st_intersects,remove_self=TRUE)
-st_intersects(buffered_nodes,remove_self=TRUE)
-neighbors_df$status <- ifelse(is.na(neighbors_df$vertex.y), "No", "Yes")
-
-ggplot(data = neighbors_df)+
-  geom_sf(aes(fill=status))+
-  geom_text(aes(x=x.x,y=y.x,label = vertex.x))+
-  scale_fill_manual(values = c("Yes"="#2b8cbe","No"="grey"),
-                    na.value = "white")+
-  theme_minimal()+
-  labs(fill="Have Neighbor?",x="x",y="y")
 # Visual center and centroids
 ####
 
 #point of view of polygons (Like point of inaccessbility)
 
 # 1. Mathematical center (can fall outside the C-shape)
-math_center <- st_centroid(my_polygon)
+#math_center <- st_centroid(my_polygon)
 
 # 2. Visual center (guaranteed to be inside the C-shape)
-visual_center <- st_point_on_surface(my_polygon)
+#visual_center <- st_point_on_surface(my_polygon)
