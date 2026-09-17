@@ -69,12 +69,6 @@ triangulation <- deldir(gs_crop@nodes$x,gs_crop@nodes$y)
 # Extract the edges (connections between points)
 edges_matrix <- triangulation$delsgs[, c("ind1", "ind2")]
 head(edges_matrix)
-gs_crop@nodes[783,][1:5]
-gs_crop@nodes[781,][1:5]
-edges_matrix$ind1[1:5]
-gs_crop@nodes[edges_matrix$ind1[1:5],"name"]
-gs_vertex_attr(gs_crop,"name")[c(783,781)]
-edges_matrix$ind1[1:5]
 
 edges_matrix$ind1 <- gs_vertex_attr(gs_crop,"name")[edges_matrix$ind1]
 edges_matrix$ind2 <- gs_vertex_attr(gs_crop,"name")[edges_matrix$ind2]
@@ -131,3 +125,58 @@ p1 + p2 + p3
 
 ggsave("images/GrapsSpace_Delaunay.png",p1 + p2 + p3,
        height = 5,width = 12,units = "in",dpi = 120)
+######################################################
+# Calculate the greates distance btween any pair of its vertices
+# load function that calculate the maximum distance of a polygon (polygon diameter)
+source("R/maxDistPol_func.R")
+
+# Assign maximum distance (polygon diameter)
+all_geom <- gs_crop@nodes %>% select(vertex,geometry)
+
+for(i in 1:length(all_geom$geometry)){
+  all_geom$maxDist[i] <- maxDistPol(all_geom$geometry[i])
+}
+gs_vertex_attr(gs_crop_dnay, "maxDist") <- all_geom$maxDist
+rm(all_geom)
+
+# Store the meanMaxDist between all the cell polygons
+meanMaxDist <- mean(gs_vertex_attr(gs_crop_dnay, "maxDist"))
+######################################################
+# Finding neighbors by cell segmentation
+neighbor_list <- st_is_within_distance(st_as_sf(gs_crop_dnay@nodes),
+                                       st_as_sf(gs_crop_dnay@nodes),
+                                       dist = 0.0005,
+                                       remove_self=TRUE)
+neighbor_list
+####
+neighbor_df<- as.data.frame(neighbor_list)
+head(neighbor_df)
+
+neighbor_df$row.id <- gs_vertex_attr(gs_crop,"name")[neighbor_df$row.id]
+neighbor_df$col.id <- gs_vertex_attr(gs_crop,"name")[neighbor_df$col.id]
+colnames(neighbor_df) <- c("from","to")
+head(neighbor_df)
+
+# Adding edges to the GraphSpace object by cell-cell proximity
+gs_crop_prox <- gs_crop |> gs_add_edges(neighbor_df)
+
+p4 <- ggplot(gs_crop_prox) +
+  geom_edgespace()+
+  geom_nodespace(color="black",
+                 size = .5,pch = 19) +
+  scale_colour_continuous(palette = cpal, limits = data_range)+
+  theme_gspace_coords(theme = "th3",is_norm = TRUE)+
+  theme_minimal()+
+  labs(title = "Cell proximity",x=NULL,y=NULL)
+p4
+
+gs_crop_dnay@graph
+gs_crop_prox@graph
+
+g <- ggpubr::ggarrange(p1,p2,p3,p4,
+                       ncol = 2, nrow = 2,
+                       labels = c("A", "B", "C", "D"))
+g
+
+ggsave("images/GrapsSpace_Delaunay_Proximity.png",g,
+       height = 10,width = 10,units = "in",dpi = 120)
