@@ -64,19 +64,35 @@ p2
 nodes <- gs_crop@nodes
 nodes <- nodes %>% select(c(vertex,x,y,nCount_Xenium,nFeature_Xenium,geometry))
 
+# Inspecting the 'sf' geometry types
 st_geometry_type(nodes$geometry) %>% table()
-
 ###############################
+# Lets find the cell polygons which intersect with each other
+# Viewing the cell polygons of the first nine cells:
 ggplot(data = st_as_sf(nodes[1:9,]))+
   geom_sf()+
-  #geom_point(aes(x=x,y=y))+
   geom_text(aes(x=x,y=y,label = vertex))+
   theme_minimal()
+# If you get a closer look, you will see that even neighbor cells do not cross the polygons of all their neigbors (this will be handled dowstream)
 
+# The simplest way to find possible neighbors is using the 'st-intersects()' function, which retrieves the the polygons that cross each other
+# The parameter 'remove_self=TRUE' desconsider a polygon to be neighbor of itself.
 intersect_list <- st_intersects(st_as_sf(nodes[1:9,]),remove_self=TRUE)
+# st_intersects() returns a 'sgbp' list which contains the indices of the intersected 'sf' objects (neighbors)
 intersect_list
+# see the indeces of the neighbors of the first polygon:
+intersect_list[[1]]
+# [1] 6 (only one neighbor in this case, with index 6)
 
+# We can convert the intersect list with a dataframe containing all the neighbor pairs
+as.data.frame(intersect_list)
+# 'row.id' contain the index of the reference 'sf' object and the 'col.id' have the index of its neighbor
+################
+# Lets visualize the neighbors obtained by 'st_intersects()'
+# 'st_join()' returns a data frame with neighbor pairs from the two given 'sf' objects.
+# In this case, the 'sf' objects are the same. The join condition is the 'st_intersects'.
 neighbors_df <- st_join(st_as_sf(nodes[1:9,]), st_as_sf(nodes[1:9,]), join = st_intersects,remove_self=TRUE)
+# The new 'status' column will only store if a given polygon have neighbor or not
 neighbors_df$status <- ifelse(is.na(neighbors_df$vertex.y), "No", "Yes")
 
 ggplot(data = neighbors_df)+
@@ -86,14 +102,32 @@ ggplot(data = neighbors_df)+
                     na.value = "white")+
   theme_minimal()+
   labs(fill="Have Neighbor?",x="x",y="y")
+# As you can see, not all cells were assigned to have neighbors because the their boundaries do not overlap. 
+##########
+# Expanding the polygons area to identify the neighboring cells with which the 'sf' polygon does not overlap
+nodes <- st_as_sf(nodes[1:9,]) # just assigning the example dataframe as a 'sf' objects
 
+# 'st_is_within_distance()' receives two 'sf' objects and retrieves the same 'sgbp' list returned by the 'st_intersects()' function.
+# The 'dist' parameter is a distance used "expand" the polygons boundaries to assess if they would overlap.
+# If yes, the indices of the overlaping polygons are stored.
+neighbor_list <- st_is_within_distance(nodes,nodes, dist = 0.0005,remove_self=TRUE)
+neighbor_list
+# Here we can see that the neighbors were assigned properly, with the 'dist' equals to 0.0005.
+
+# Inspecting the indices of the neighbors from the first cell/polygon.
+neighbor_list[[1]]
+# [1] 2 6 7
+# Assessing the number of neighbors the first cell/polygons have.
+length(neighbor_list[[1]])
+# [1] 3
+
+# Is possible to convert the convert the neighbors list to a dataframe:
+neighbors_df <- as.data.frame(neighbor_list)
+neighbors_df
+########
+# To illustrate the test made by 'st_is_within_distance()' we can use the 'st_buffer()' function.
+# 'st_buffer()' change the polygon boundaries by a given distance ('dist') parameter
 buffered_nodes <- st_buffer(st_as_sf(nodes[1:9,]),dist = 0.0005)
-ggplot(data = buffered_nodes)+
-  geom_sf()+
-  #geom_point(aes(x=x,y=y))+
-  geom_text(aes(x=x,y=y,label = vertex))+
-  theme_minimal()
-
 neighbors_df <- st_join(buffered_nodes, buffered_nodes, join = st_intersects,remove_self=TRUE)
 st_intersects(buffered_nodes,remove_self=TRUE)
 neighbors_df$status <- ifelse(is.na(neighbors_df$vertex.y), "No", "Yes")
@@ -105,35 +139,4 @@ ggplot(data = neighbors_df)+
                     na.value = "white")+
   theme_minimal()+
   labs(fill="Have Neighbor?",x="x",y="y")
-##########
-nodes <- st_as_sf(nodes[1:9,])
-neighbor_list <- st_is_within_distance(nodes,nodes, dist = 0.0005,remove_self=TRUE)
-neighbor_list
-length(neighbor_list)
-neighbor_list[[1]]
-length(neighbor_list[[1]])
-
-neighbor_list <- as.data.frame(neighbor_list)
-View(neighbor_list)
-##########
-# Assigning spatial metrics as nodes features
-gs_vertex_attr(gs_crop,"geometry")
-# define function that calculate the max distance polygon diameter
-maxDistPol <- function(polygon){
-  # Extract polygon points
-  polygon_points <- st_cast(polygon, "POINT")
-  polygon_points <- polygon_points[-1]
-  
-  # Find the absolute maximum distance between any two vertices
-  #max_distance <- max(st_distance(polygon_points, polygon_points[-1]))
-  max_distance <- max(st_distance(polygon_points, polygon_points))
-  
-  return(max_distance)
-}
-
-# Assign maximum distance (polygon diameter)
-all_geom <- gs_crop@nodes %>% select(vertex,geometry)
-
-for(i in 1:length(nodes$vertex)){
-  all_geom$maxDist[i] <- maxDistPol(all_geom$geometry[i])
-}
+# Now all cells were assigned to have neighbors
