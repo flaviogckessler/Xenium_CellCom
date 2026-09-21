@@ -94,10 +94,13 @@ gifski(png_files = file_paths[-1],
        height = 600,
        delay = 0.2)
 
-ggplot(edges_by_dist,aes(x=dist,y=edges))+
+g<- ggplot(edges_by_dist,aes(x=dist,y=edges))+
          geom_line()+
          geom_point()+
   labs(y="Number of edges")
+
+ggsave("images/Proximity_Dist_numberEdges.png",g,
+       height = 4,width = 7,units = "in",dpi = 120)
 ######################################################
 # Calculate the greates distance btween any pair of its vertices
 # load function that calculate the maximum distance of a polygon (polygon diameter)
