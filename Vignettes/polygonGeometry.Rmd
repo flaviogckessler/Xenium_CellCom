@@ -32,7 +32,14 @@ library("sf")
 library("ggplot2")
 library("patchwork")
 library("dplyr")
+library("psych")
+library("lwgeom")
 
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+if (!require("microbiome", quietly = TRUE))
+    BiocManager::install("microbiome")
+library("microbiome")
 ```
 
 ## Load the Xenium crop

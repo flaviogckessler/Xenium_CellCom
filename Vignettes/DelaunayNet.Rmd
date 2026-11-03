@@ -30,7 +30,7 @@ library("sf")
 library("ggplot2")
 library("deldir")
 library("igraph")
-
+library("gridExtra")
 ```
 
 ## Load the Xenium crop
@@ -90,7 +90,6 @@ p1 <- ggplot(gs_crop) +
     xlab = "Coordenada do tecido 1",
     ylab = "Coordenada do tecido 2")
 
-p1
 p2 <- ggplot(gs_crop) +
   geom_sf(
     mapping = aes(
@@ -103,8 +102,7 @@ p2 <- ggplot(gs_crop) +
     xlab = "Tissue coordinate 1",
     ylab = "Tissue coordinate 2")
 
-p2
-###############################
+grid.arrange(p1,p2,ncol=2)
 ```
 
 ## Construct the Delaunay network
@@ -183,7 +181,8 @@ p3 <- ggplot(gs_crop_dnay) +
   theme_minimal()+
   labs(title = "Delaunay triangulation",x=NULL,y=NULL)
 
-p1 + p2 + p3
+
+grid.arrange(p1,p2,p3,ncol=3)
 
 ggsave("images/GrapsSpace_Delaunay.png",p1 + p2 + p3,
        height = 5,width = 12,units = "in",dpi = 120)

@@ -7,7 +7,7 @@ and compare Delaunay and proximity networks.
 
 ## Analysis book
 
-[Download the HTML book](Book/Xenium%20Cell%20Com%20book.html) and open it in a
+[View the HTML book](https://flaviogckessler.github.io/flaviogckessler/Xenium_CellCom/Book/XeniumCellCombook.html) and open it in a
 browser. Its five chapters cover neighbor inspection, polygon geometry,
 Delaunay networks, proximity distance thresholds, and direct neighbor
 visualization. Figures and animation are embedded for offline reading.

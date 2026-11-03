@@ -32,7 +32,7 @@ library("sf")
 library("ggplot2")
 library("patchwork")
 library("dplyr")
-
+library("gridExtra")
 ```
 
 ## Load the Xenium crop
@@ -92,7 +92,6 @@ p1 <- ggplot(gs_crop) +
     xlab = "Coordenada do tecido 1",
     ylab = "Coordenada do tecido 2")
 
-p1
 p2 <- ggplot(gs_crop) +
   geom_sf(
     mapping = aes(
@@ -105,9 +104,7 @@ p2 <- ggplot(gs_crop) +
     xlab = "Coordenada do tecido 1",
     ylab = "Coordenada do tecido 2")
 
-p2
-###############################
-###############################
+grid.arrange(p1,p2,ncol=2)
 ```
 
 ## Inspect polygon geometry

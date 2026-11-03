@@ -181,6 +181,7 @@ g<- ggplot(edges_by_dist,aes(x=dist,y=edges))+
          geom_line()+
          geom_point()+
   labs(y="Number of edges")
+g
 
 ggsave("images/Proximity_Dist_numberEdges.png",g,
        height = 4,width = 7,units = "in",dpi = 120)
