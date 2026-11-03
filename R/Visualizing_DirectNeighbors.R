@@ -73,28 +73,35 @@ gs_neig2 <- cropGraphSpace(gs_neig,
                            ymin = 0.2, ymax = 0.35)
 gs_neig2 <- normalizeGraphSpace(gs_neig2, mar = 0, norm.geometry = TRUE)
 
-ggplot(gs_neig2) +
+g <- ggplot(gs_neig2) +
   geom_sf(mapping = aes(geometry = geometry,fill = log2(Slc17a7 + 1))) +
   scale_fill_continuous(palette = cpal, limits = data_range) +
   #geom_nodespace(colour = "black", size = 0.2, pch = 19) +
   geom_edgespace(color="red",alpha=0.8)+
   my_theme
-
+g
+ggsave("images/DirectNeighbors_Edges1.png",g,
+       height = 4,width = 7,units = "in",dpi = 120)
 
 gs_edge_attr(gs_neig2,"arrowType") <- "13|-|13"
 
-ggplot(gs_neig2) +
+g<- ggplot(gs_neig2) +
   geom_sf(mapping = aes(geometry = geometry,fill = log2(Slc17a7 + 1))) +
   scale_fill_continuous(palette = cpal, limits = data_range) +
   geom_edgespace(color="black",alpha=0.8)+
   my_theme
+g
 
-ggplot(gs_neig2) +
+ggsave("images/DirectNeighbors_Edges2.png",g,
+       height = 4,width = 7,units = "in",dpi = 120)
+
+g<-ggplot(gs_neig2) +
   geom_sf(mapping = aes(geometry = geometry,fill = log2(Slc17a7 + 1))) +
   scale_fill_continuous(palette = cpal, limits = data_range) +
   geom_nodespace(colour = "black", size = 15, pch = 19,alpha=0) +
   geom_edgespace(color="black",alpha=0.8)+
   my_theme
+g
 
-library("patchwork")
-glyph_list()
+ggsave("images/DirectNeighbors_Edges3.png",g,
+       height = 4,width = 7,units = "in",dpi = 120)
