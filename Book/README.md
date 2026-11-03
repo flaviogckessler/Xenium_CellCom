@@ -1,6 +1,6 @@
 # Xenium Cell Com book
 
-The complete source is **Xenium Cell Com book.qmd**. It produces one portable
+The complete source is **XeniumCellCombook.qmd**. It produces **XeniumCellCombook.html**, one portable
 HTML volume with five numbered chapters, in this order:
 
 1. Inspecting neighbors — `InspectingNeighbors.Rmd`
@@ -8,6 +8,11 @@ HTML volume with five numbered chapters, in this order:
 3. Delaunay and proximity networks — `DelaunayNet.Rmd`
 4. Setting the proximity distance — `SettingDist_proximityNetwork.Rmd`
 5. Visualizing direct neighbors — `Visualizing_DirectNeighbors.Rmd`
+
+[Read the book online](https://flaviogckessler.github.io/Xenium_CellCom/Book/XeniumCellCombook.html)
+through GitHub Pages. The project URL includes the repository name once after
+`flaviogckessler.github.io`; it does not include an additional username directory.
+Pages publishes the `main` branch from the repository root.
 
 From this folder, render with:
 
@@ -17,7 +22,7 @@ From this folder, render with:
 
 The helper finds Quarto (including RStudio's bundled copy) and uses a local
 temporary folder to avoid Windows temporary-path issues. The source also works
-with `quarto render "Xenium Cell Com book.qmd" --to html` in a configured R
+with `quarto render "XeniumCellCombook.qmd" --to html` in a configured R
 and Quarto environment.
 
 Use an R installation with `knitr` and `rmarkdown` available to Quarto. The

@@ -43,7 +43,7 @@ try {
 
     Push-Location -LiteralPath $bookDirectory
     try {
-        & $quarto render 'Xenium Cell Com book.qmd' --to html 2>&1 |
+        & $quarto render 'XeniumCellCombook.qmd' --to html 2>&1 |
             Tee-Object -FilePath (Join-Path $bookDirectory 'render.log')
         if ($LASTEXITCODE -ne 0) { throw "Quarto render failed with exit code $LASTEXITCODE." }
     } finally {

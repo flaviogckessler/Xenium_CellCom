@@ -1,7 +1,7 @@
 ---
 title: "Xenium Cell Com book"
 subtitle: "Cell geometry, spatial neighbors, and proximity networks"
-output-file: "Xenium Cell Com book.html"
+output-file: "XeniumCellCombook.html"
 keep-md: true
 lang: en
 date: last-modified
