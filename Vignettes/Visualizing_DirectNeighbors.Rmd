@@ -1,0 +1,187 @@
+---
+title: "Visualize direct cell neighbors"
+output:
+  html_document:
+    toc: true
+---
+
+Build a polygon proximity graph for a Xenium crop and inspect alternative ways to draw direct neighbor edges on cell segmentation plots.
+
+Source script: [R/Visualizing_DirectNeighbors.R](../R/Visualizing_DirectNeighbors.R). The code below retains the source script's order and comments.
+
+## Setup
+
+Enable evaluation and code display for all chunks, and resolve the source script's relative paths from the project root when knitting this file from the Vignettes folder.
+
+```{r setup, eval = TRUE, echo = TRUE}
+knitr::opts_chunk$set(eval = TRUE, echo = TRUE)
+knitr::opts_knit$set(
+  root.dir = normalizePath("..", winslash = "/", mustWork = TRUE)
+)
+```
+
+## Load packages
+
+Load the spatial graph, geometry, plotting, and animation libraries.
+
+install.packages("gifski")
+
+```{r step-01, eval = TRUE, echo = TRUE}
+library("RGraphSpace")
+library("sf")
+library("ggplot2")
+library("igraph")
+library("dplyr")
+library("gifski")
+library("gridExtra")
+```
+
+## Load the Xenium crop
+
+Download the cropped GraphSpace object if needed and read it into the session.
+
+```{r step-02, eval = TRUE, echo = TRUE}
+# download crop
+diretorio_dados <- "data"
+url_dados <- paste0(
+  "https://raw.githubusercontent.com/flaviogckessler/Curso_ST/",
+  "main/data/Xenium_GS_Crop.RDS")
+
+arquivo_dados <- file.path(diretorio_dados, "Xenium_GS_Crop.RDS")
+
+if (!file.exists(arquivo_dados)) {
+  utils::download.file(url_dados,arquivo_dados,mode = "wb")}
+
+gs_crop <- readRDS(arquivo_dados)
+
+if (!inherits(gs_crop, "GraphSpace")) {
+  stop("O arquivo baixado não contém um objeto da classe GraphSpace.")}
+
+gs_crop
+#########
+```
+
+## Configure plotting
+
+Define a shared palette, expression range, and coordinate theme.
+
+```{r step-03, eval = TRUE, echo = TRUE}
+# Set color palette and data range for use across plots
+cpal <- hcl.colors(100, palette = "Spectral", rev = T)
+data_range <- c(0, 7)
+# Set a reusable theme
+my_theme <- theme_gspace_coords(theme = "th3", is_norm = TRUE, 
+                                xlab = "Tissue coordinates 1", ylab = "Tissue coordinates 2")
+#########
+```
+
+## Load the neighbor helper
+
+Source the function that finds neighbors using segmentation polygons.
+
+```{r step-04, eval = TRUE, echo = TRUE}
+# load function that calculate that find the spot/cells neighbors based on the cell segmentation info
+source("R/gs_neighbors_func.R")
+#########
+```
+
+## Inspect the segmentation plot
+
+Display the crop with polygons colored by Slc17a7 expression.
+
+```{r step-05, eval = TRUE, echo = TRUE}
+p1 <- ggplot(gs_crop) +
+  geom_sf(
+    mapping = aes(
+      geometry = geometry,
+      fill = log2(Slc17a7 + 1))) +
+  scale_fill_continuous(palette = cpal, limits = data_range) +
+  geom_nodespace(colour = "black", size = 0.2, pch = 19) +
+  my_theme
+
+p1
+```
+
+## Build and plot the neighbor graph
+
+Construct a graph using the selected polygon distance and plot its edges with and without the segmentation layer.
+
+```{r step-06, eval = TRUE, echo = TRUE}
+gs_neig <- gs_neighbors(gs_crop,dist=0.0005)
+
+p1 <- ggplot(gs_neig) +
+  geom_edgespace(color="red")+
+  geom_nodespace(color="black",
+                 size = .2,pch = 19) +
+  scale_colour_continuous(palette = cpal, limits = data_range)+
+  theme_gspace_coords(theme = "th3",is_norm = TRUE)+
+  my_theme
+
+p2 <- ggplot(gs_neig) +
+  geom_sf(mapping = aes(geometry = geometry,fill = log2(Slc17a7 + 1))) +
+  scale_fill_continuous(palette = cpal, limits = data_range) +
+  #geom_nodespace(colour = "black", size = 0.2, pch = 19) +
+  geom_edgespace(color="red",alpha=0.3)+
+  my_theme
+
+grid.arrange(p1,p2,ncol=2)
+```
+
+## Inspect a smaller region
+
+Crop and normalize the graph, then save a close-up of the neighbor edges.
+
+```{r step-07, eval = TRUE, echo = TRUE}
+# Crop to the smaller region and re-normalize coordinates
+gs_neig2 <- cropGraphSpace(gs_neig, 
+                           xmin = 0.45, xmax = 0.6, 
+                           ymin = 0.2, ymax = 0.35)
+gs_neig2 <- normalizeGraphSpace(gs_neig2, mar = 0, norm.geometry = TRUE)
+
+g <- ggplot(gs_neig2) +
+  geom_sf(mapping = aes(geometry = geometry,fill = log2(Slc17a7 + 1))) +
+  scale_fill_continuous(palette = cpal, limits = data_range) +
+  #geom_nodespace(colour = "black", size = 0.2, pch = 19) +
+  geom_edgespace(color="red",alpha=0.8)+
+  my_theme
+g
+ggsave("images/DirectNeighbors_Edges1.png",g,
+       height = 4,width = 7,units = "in",dpi = 120)
+
+```
+
+## Change edge rendering
+
+Set the edge arrow type and save the resulting segmentation view.
+
+```{r step-08, eval = TRUE, echo = TRUE}
+gs_edge_attr(gs_neig2,"arrowType") <- "13|-|13"
+
+g<- ggplot(gs_neig2) +
+  geom_sf(mapping = aes(geometry = geometry,fill = log2(Slc17a7 + 1))) +
+  scale_fill_continuous(palette = cpal, limits = data_range) +
+  geom_edgespace(color="black",alpha=0.8)+
+  my_theme
+g
+
+ggsave("images/DirectNeighbors_Edges2.png",g,
+       height = 4,width = 7,units = "in",dpi = 120)
+
+```
+
+## Adjust node rendering
+
+Add the transparent node layer used in the source script and save the final view.
+
+```{r step-09, eval = TRUE, echo = TRUE}
+g<-ggplot(gs_neig2) +
+  geom_sf(mapping = aes(geometry = geometry,fill = log2(Slc17a7 + 1))) +
+  scale_fill_continuous(palette = cpal, limits = data_range) +
+  geom_nodespace(colour = "black", size = 15, pch = 19,alpha=0) +
+  geom_edgespace(color="black",alpha=0.8)+
+  my_theme
+g
+
+ggsave("images/DirectNeighbors_Edges3.png",g,
+       height = 4,width = 7,units = "in",dpi = 120)
+```

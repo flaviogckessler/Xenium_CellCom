@@ -1,0 +1,80 @@
+---
+title: "Prepare the spatial neighbor analysis environment"
+output:
+  html_document:
+    toc: true
+---
+
+Install and load the packages used for spatial neighbor analysis. The source script also records example commands for downloading and extracting a Xenium dataset.
+
+Source script: [R/FindNeighbors.R](../R/FindNeighbors.R). The code below retains the source script's order and comments.
+
+## Setup
+
+Enable evaluation and code display for all chunks, and resolve the source script's relative paths from the project root when knitting this file from the Vignettes folder.
+
+```{r setup, eval = TRUE, echo = TRUE}
+knitr::opts_chunk$set(eval = TRUE, echo = TRUE)
+knitr::opts_knit$set(
+  root.dir = normalizePath("..", winslash = "/", mustWork = TRUE)
+)
+```
+
+## Install packages
+
+Check the required packages and install any that are missing.
+
+```{r step-01, eval = TRUE, echo = TRUE}
+# reference tutorial: https://sysbiolab.github.io/RGraphSpace/articles/nested-geometries.html
+
+# Install packages
+if (!require("BiocManager", quietly = TRUE)){install.packages("BiocManager")}
+if (!require("SpatialFeatureExperiment", quietly = TRUE)){BiocManager::install("SpatialFeatureExperiment")}
+if (!require("RGraphSpace", quietly = TRUE)){
+  if (!require("remotes", quietly = TRUE)){install.packages("remotes")}
+  remotes::install_github("sysbiolab/RGraphSpace", build_vignettes=TRUE)}
+if (!require("sf", quietly = TRUE)){install.packages("sf")}
+if (!require("terra", quietly = TRUE)){install.packages("terra")}
+
+```
+
+## Check the RGraphSpace version
+
+Check the minimum version specified in the source script and update when needed.
+
+```{r step-02, eval = TRUE, echo = TRUE}
+# Check versions
+if (packageVersion("RGraphSpace") < "1.5.4"){
+  message("Need to update 'RGraphSpace' for this vignette")
+  remotes::install_github("sysbiolab/RGraphSpace")}
+
+```
+
+## Load packages
+
+Attach the libraries used for graph and spatial data workflows.
+
+```{r step-03, eval = TRUE, echo = TRUE}
+# Load packages
+library("RGraphSpace")
+library("SpatialFeatureExperiment")
+library("sf")
+library("terra")
+library("patchwork")
+```
+
+## Xenium data download reference
+
+The following download and extraction commands are retained as comments, as in the source script.
+
+```{r step-04, eval = TRUE, echo = TRUE}
+#################
+# Batch:
+# Download output files in a 'localdir' directory
+#wget https://cf.10xgenomics.com/samples/xenium/2.0.0/Xenium_V1_Human_Colon_Cancer_P2_CRC_Add_on_FFPE/Xenium_V1_Human_Colon_Cancer_P2_CRC_Add_on_FFPE_outs.zip
+
+# Extract the outputs
+#unzip Xenium_V1_Human_Colon_Cancer_P2_CRC_Add_on_FFPE_outs.zip
+#################
+```
+

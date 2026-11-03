@@ -1,0 +1,83 @@
+---
+title: "Set up CellChat for spatial transcriptomics"
+output:
+  html_document:
+    toc: true
+---
+
+Install the helper packages and analysis tools used by the CellChat spatial transcriptomics workflow, then load the analysis libraries.
+
+Source script: [R/CellChat_ST_vignette.R](../R/CellChat_ST_vignette.R). The code below retains the source script's order and comments.
+
+## Setup
+
+Enable evaluation and code display for all chunks, and resolve the source script's relative paths from the project root when knitting this file from the Vignettes folder.
+
+```{r setup, eval = TRUE, echo = TRUE}
+knitr::opts_chunk$set(eval = TRUE, echo = TRUE)
+knitr::opts_knit$set(
+  root.dir = normalizePath("..", winslash = "/", mustWork = TRUE)
+)
+```
+
+## Install dependencies
+
+Check for the helper and analysis packages and install any that are missing.
+
+```{r step-01, eval = TRUE, echo = TRUE}
+# https://htmlpreview.github.io/?https://github.com/jinworks/SpatialCellChat/blob/master/tutorial/SpatialCellChat_analysis_of_spatial_transcriptomics_data.html
+
+# Install helper packages if needed
+if (!requireNamespace("devtools", quietly = TRUE)) {
+  install.packages("devtools")
+}
+
+if (!requireNamespace("BiocManager", quietly = TRUE)) {
+  install.packages("BiocManager")
+}
+
+if (!requireNamespace("SpatialCellChat", quietly = TRUE)) {
+  devtools::install_github("jinworks/SpatialCellChat")
+}
+
+if (!requireNamespace("CellChat", quietly = TRUE)) {
+  devtools::install_github("jinworks/CellChat")
+}
+
+if (!requireNamespace("BiocNeighbors", quietly = TRUE)) {
+  BiocManager::install("BiocNeighbors")
+}
+
+if (!requireNamespace("MERINGUE", quietly = TRUE)) {
+  devtools::install_github("JEFworks-Lab/MERINGUE")
+}
+
+if (!requireNamespace("ALRA", quietly = TRUE)) {
+  devtools::install_github("KlugerLab/ALRA")
+}
+
+if (!requireNamespace("RcppML", quietly = TRUE)) {
+  devtools::install_github("zdebruine/RcppML")
+}
+
+if (!requireNamespace("presto", quietly = TRUE)) {
+  devtools::install_github("immunogenomics/presto")
+}
+
+```
+
+## Load analysis packages
+
+Load the libraries used for cell communication analysis and data manipulation.
+
+```{r step-02, eval = TRUE, echo = TRUE}
+# Load packages
+library(CellChat)
+library(patchwork)
+library(Seurat)
+library(SeuratObject)
+library(SeuratData)
+library(dplyr)
+library(tibble)
+```
+
