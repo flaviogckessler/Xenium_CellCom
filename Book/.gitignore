@@ -1,0 +1,9 @@
+# Regenerated when rendering the self-contained HTML book.
+.render-tmp/
+_R_library/
+*_files/
+*.html.md
+render.log
+figures/
+frames/
+results/

@@ -1,0 +1,844 @@
+---
+title: "Xenium Cell Com book"
+subtitle: "Cell geometry, spatial neighbors, and proximity networks"
+output-file: "Xenium Cell Com book.html"
+keep-md: true
+lang: en
+date: last-modified
+format:
+  html:
+    theme: default
+    toc: true
+    toc-title: "Chapters"
+    toc-location: left
+    toc-depth: 2
+    number-sections: true
+    number-depth: 2
+    embed-resources: true
+    code-copy: true
+    code-overflow: wrap
+    fig-cap-location: bottom
+    title-block-banner: "#183d45"
+    smooth-scroll: true
+execute:
+  eval: true
+  echo: true
+  error: false
+  warning: true
+  message: false
+  cache: false
+knitr:
+  opts_chunk:
+    fig.width: 9
+    fig.height: 6
+    dpi: 120
+    dev: ragg_png
+---
+
+This book follows five Xenium analysis vignettes in the requested order. It
+starts with cell segmentation polygons, measures their geometry, compares
+Delaunay and polygon proximity graphs, explores the distance threshold, and
+finishes with close-up views of direct neighbors. Each numbered chapter
+corresponds to one vignette.
+
+The chapters share one R session. Packages, data, plotting helpers, spatial
+metrics, and neighbor candidates are prepared once and reused. The HTML
+contains its figures and animation, so it can be read offline.
+
+# Before you begin {.unnumbered}
+
+## Paths and execution {.unnumbered}
+
+Keep this source file in the project's `Book` folder. The original dataset is
+read from `../data`; new figures, animation frames, and result tables are saved
+inside `Book`. All R chunks are evaluated and their code is displayed. An R
+error stops the render.
+
+```{r book-paths, eval = TRUE, echo = TRUE}
+book_dir <- normalizePath(
+  dirname(knitr::current_input(dir = TRUE)),
+  winslash = "/", mustWork = TRUE
+)
+project_root <- normalizePath(
+  file.path(book_dir, ".."), winslash = "/", mustWork = TRUE
+)
+figure_dir <- file.path(book_dir, "figures")
+frame_dir <- file.path(book_dir, "frames")
+result_dir <- file.path(book_dir, "results")
+for (directory in c(figure_dir, frame_dir, result_dir)) {
+  dir.create(directory, recursive = TRUE, showWarnings = FALSE)
+}
+knitr::opts_chunk$set(eval = TRUE, echo = TRUE)
+knitr::opts_knit$set(root.dir = book_dir)
+options(repos = c(CRAN = "https://cloud.r-project.org"))
+options(timeout = max(600, getOption("timeout")))
+set.seed(42)
+```
+
+## Check and load packages {.unnumbered}
+
+Check each dependency before installing it. Missing packages are installed
+into a project-local library. Existing installations are reused. `microbiome`
+comes from Bioconductor; `RGraphSpace` is installed from its development
+repository if the required version is unavailable. Seurat, gridExtra, and
+ggpubr are unnecessary here because the book uses the GraphSpace object
+directly and combines plots with patchwork.
+
+```{r book-packages, eval = TRUE, echo = TRUE}
+local_library <- file.path(book_dir, "_R_library")
+if (dir.exists(local_library)) {
+  .libPaths(c(local_library, .libPaths()))
+}
+prepare_local_library <- function() {
+  dir.create(local_library, recursive = TRUE, showWarnings = FALSE)
+  .libPaths(c(local_library, .libPaths()))
+  local_library
+}
+
+cran_packages <- c(
+  "knitr", "rmarkdown", "sf", "ggplot2", "dplyr",
+  "patchwork", "psych", "lwgeom", "deldir", "igraph", "gifski", "ragg",
+  "BiocManager", "remotes"
+)
+for (package in cran_packages) {
+  if (!requireNamespace(package, quietly = TRUE)) {
+    install.packages(package, lib = prepare_local_library())
+  }
+}
+if (!requireNamespace("microbiome", quietly = TRUE)) {
+  BiocManager::install(
+    "microbiome", lib = prepare_local_library(), ask = FALSE, update = FALSE
+  )
+}
+if (!requireNamespace("RGraphSpace", quietly = TRUE) ||
+    utils::packageVersion("RGraphSpace") < "1.5.4") {
+  remotes::install_github(
+    "sysbiolab/RGraphSpace", lib = prepare_local_library(),
+    upgrade = "never", build_vignettes = FALSE
+  )
+}
+
+required_packages <- c(cran_packages, "microbiome", "RGraphSpace")
+available <- vapply(required_packages, requireNamespace, logical(1), quietly = TRUE)
+if (!all(available)) {
+  stop("Unavailable packages: ", paste(required_packages[!available], collapse = ", "))
+}
+suppressPackageStartupMessages({
+  library(RGraphSpace)
+  library(sf)
+  library(ggplot2)
+  library(dplyr)
+  library(patchwork)
+})
+package_versions <- data.frame(
+  package = required_packages,
+  version = vapply(required_packages, function(x) {
+    as.character(utils::packageVersion(x))
+  }, character(1))
+)
+knitr::kable(package_versions, caption = "Dependencies used for this render")
+write.csv(package_versions, file.path(result_dir, "package-versions.csv"), row.names = FALSE)
+```
+
+## Load and validate the crop {.unnumbered}
+
+Download the crop only when it is missing. Check the object class, required
+columns, cell identifiers, and polygon geometry before proceeding. The crop
+uses normalized planar coordinates without a geographic coordinate reference
+system: the distance thresholds below are in these coordinate units, not
+micrometers. Areas and perimeters have the corresponding normalized units.
+
+```{r book-data, eval = TRUE, echo = TRUE}
+data_dir <- file.path(project_root, "data")
+dir.create(data_dir, recursive = TRUE, showWarnings = FALSE)
+data_file <- file.path(data_dir, "Xenium_GS_Crop.RDS")
+data_url <- paste0(
+  "https://raw.githubusercontent.com/flaviogckessler/Curso_ST/",
+  "main/data/Xenium_GS_Crop.RDS"
+)
+if (!file.exists(data_file)) {
+  utils::download.file(data_url, data_file, mode = "wb")
+}
+gs_crop <- readRDS(data_file)
+stopifnot(inherits(gs_crop, "GraphSpace"))
+required_columns <- c("vertex", "name", "x", "y", "geometry", "nCount_Xenium", "nFeature_Xenium")
+stopifnot(all(required_columns %in% names(gs_crop@nodes)))
+stopifnot(nrow(gs_crop@nodes) >= 9L, igraph::ecount(gs_crop@graph) == 0L)
+cell_names <- as.character(gs_vertex_attr(gs_crop, "name"))
+stopifnot(!anyNA(cell_names), !anyDuplicated(cell_names))
+cell_geometry <- sf::st_geometry(sf::st_as_sf(gs_crop@nodes))
+stopifnot(
+  all(sf::st_is_valid(cell_geometry)),
+  !any(sf::st_is_empty(cell_geometry)),
+  all(as.character(sf::st_geometry_type(cell_geometry)) %in% c("POLYGON", "MULTIPOLYGON"))
+)
+if (isTRUE(sf::st_is_longlat(cell_geometry))) {
+  stop("This workflow requires planar tissue coordinates.")
+}
+stopifnot(
+  nrow(gs_crop@fdata) == length(cell_names),
+  !is.null(rownames(gs_crop@fdata)),
+  setequal(rownames(gs_crop@fdata), cell_names),
+  "Slc17a7" %in% colnames(gs_crop@fdata)
+)
+proximity_threshold <- 0.0005
+distance_grid <- seq(from = 0, to = 0.002, by = 0.0001)
+cpal <- grDevices::hcl.colors(100, palette = "Spectral", rev = TRUE)
+data_range <- c(0, 7)
+my_theme <- theme_gspace_coords(
+  theme = "th3", is_norm = TRUE,
+  xlab = "Tissue coordinate 1", ylab = "Tissue coordinate 2"
+)
+knitr::kable(data.frame(
+  cells = length(cell_names), genes = ncol(gs_crop@fdata),
+  initial_edges = igraph::ecount(gs_crop@graph),
+  selected_distance = proximity_threshold
+), caption = "Input crop")
+```
+
+# Inspecting neighbors {#sec-inspecting-neighbors}
+
+Based on `Vignettes/InspectingNeighbors.Rmd`.
+
+Cell segmentation polygons can identify nearby cells even when their boundaries
+do not overlap. This chapter compares polygon intersection with a small
+distance tolerance using the first nine cells of the crop.
+
+## A reusable cell plot
+
+Define the common plotting and saving functions once. Later chapters change
+the layers and their appearance through arguments, using the same palette
+and coordinate theme. Overview networks and animation frames use vectorized
+line segments. Detailed GraphSpace edge glyphs are used for the close-up
+styling examples in Chapter 5.
+
+```{r cell-plot-helper, eval = TRUE, echo = TRUE}
+edge_layer <- function(gs, colour = "black", alpha = 0.6) {
+  edges <- igraph::as_data_frame(gs@graph, what = "edges")
+  names <- as.character(gs_vertex_attr(gs, "name"))
+  from <- match(edges$from, names)
+  to <- match(edges$to, names)
+  segments <- data.frame(
+    x = gs@nodes$x[from], y = gs@nodes$y[from],
+    xend = gs@nodes$x[to], yend = gs@nodes$y[to]
+  )
+  geom_segment(
+    data = segments, aes(x = x, y = y, xend = xend, yend = yend),
+    inherit.aes = FALSE, colour = colour, alpha = alpha, linewidth = 0.2
+  )
+}
+plot_cells <- function(gs, polygons = TRUE, nodes = TRUE, edges = FALSE,
+                       colour_by_expression = TRUE, edge_colour = "black",
+                       edge_alpha = 0.6, node_size = 0.2, node_alpha = 1,
+                       title = NULL, edge_engine = c("segments", "graphspace")) {
+  edge_engine <- match.arg(edge_engine)
+  native_edges <- edge_engine == "graphspace"
+  if (native_edges) {
+    p <- ggplot(gs)
+  } else {
+    plot_data <- sf::st_as_sf(gs@nodes)
+    expression_rows <- match(as.character(plot_data$name), rownames(gs@fdata))
+    stopifnot(!anyNA(expression_rows))
+    plot_data$Slc17a7 <- as.numeric(gs@fdata[expression_rows, "Slc17a7"])
+    p <- ggplot(plot_data)
+  }
+  if (polygons) {
+    if (colour_by_expression) {
+      p <- p + geom_sf(
+        aes(geometry = geometry, fill = log2(Slc17a7 + 1)),
+        colour = "grey65", linewidth = 0.05
+      ) + scale_fill_gradientn(colours = cpal, limits = data_range, name = "log2(Slc17a7 + 1)")
+    } else {
+      p <- p + geom_sf(aes(geometry = geometry), fill = "grey92", linewidth = 0.08)
+    }
+  }
+  if (edges && igraph::ecount(gs@graph) > 0L) {
+    p <- p + if (native_edges) {
+      geom_edgespace(colour = edge_colour, alpha = edge_alpha)
+    } else {
+      edge_layer(gs, colour = edge_colour, alpha = edge_alpha)
+    }
+  }
+  if (nodes) {
+    if (!polygons && colour_by_expression) {
+      layer <- if (native_edges) {
+        geom_nodespace(aes(colour = log2(Slc17a7 + 1)),
+                       size = node_size, pch = 19, alpha = node_alpha)
+      } else {
+        geom_point(aes(x = x, y = y, colour = log2(Slc17a7 + 1)),
+                    size = node_size, pch = 19, alpha = node_alpha)
+      }
+      p <- p + layer + scale_colour_gradientn(
+        colours = cpal, limits = data_range, name = "log2(Slc17a7 + 1)"
+      )
+    } else {
+      layer <- if (native_edges) {
+        geom_nodespace(colour = "black", size = node_size, pch = 19, alpha = node_alpha)
+      } else {
+        geom_point(aes(x = x, y = y), colour = "black",
+                    size = node_size, pch = 19, alpha = node_alpha)
+      }
+      p <- p + layer
+    }
+  }
+  if (native_edges) {
+    p <- p + my_theme
+  } else {
+    p <- p + (if (polygons) coord_sf(datum = NA) else coord_equal()) +
+      theme_minimal() + labs(x = "Tissue coordinate 1", y = "Tissue coordinate 2")
+  }
+  p + labs(title = title)
+}
+save_figure <- function(plot, filename, width = 9, height = 6) {
+  ggplot2::ggsave(
+    filename = file.path(figure_dir, filename), plot = plot,
+    width = width, height = height, units = "in", dpi = 120, bg = "white"
+  )
+}
+```
+
+```{r crop-expression, eval = TRUE, echo = TRUE}
+expression_view <- plot_cells(gs_crop, polygons = FALSE, node_size = 1)
+segmentation_view <- plot_cells(gs_crop)
+expression_view + segmentation_view +
+  plot_annotation(title = "Cell coordinates and segmentation", tag_levels = "A")
+```
+
+## Inspect polygon types and intersections
+
+The sparse list returned by `st_intersects()` contains the indices of each
+polygon's neighbors. Exclude self-intersections explicitly. Using the neighbor
+list directly also avoids a many-to-many join that repeats cell geometries.
+
+```{r inspect-intersections, eval = TRUE, echo = TRUE}
+knitr::kable(as.data.frame(table(sf::st_geometry_type(cell_geometry))),
+             col.names = c("Geometry", "Cells"))
+example_cells <- sf::st_as_sf(gs_crop@nodes[seq_len(9L), ])
+intersect_list <- sf::st_intersects(example_cells, remove_self = TRUE)
+neighbor_table <- function(neighbor_list) {
+  data.frame(
+    cell = seq_along(neighbor_list),
+    neighbors = vapply(neighbor_list, function(x) paste(x, collapse = ", "), character(1)),
+    count = lengths(neighbor_list)
+  )
+}
+knitr::kable(neighbor_table(intersect_list), caption = "Neighbors from polygon intersection")
+
+plot_neighbor_status <- function(cells, neighbor_list, title) {
+  cells$status <- factor(
+    ifelse(lengths(neighbor_list) > 0L, "Yes", "No"), levels = c("No", "Yes")
+  )
+  ggplot(cells) +
+    geom_sf(aes(fill = status), linewidth = 0.3, show.legend = TRUE) +
+    geom_text(aes(x = x, y = y, label = vertex), size = 3) +
+    scale_fill_manual(values = c(Yes = "#2b8cbe", No = "grey85"), drop = FALSE) +
+    theme_minimal() + labs(title = title, fill = "Has neighbor?", x = "x", y = "y")
+}
+intersection_plot <- plot_neighbor_status(example_cells, intersect_list, "Intersecting polygons")
+```
+
+## Neighbors within a distance
+
+`st_is_within_distance()` compares the minimum distance between polygons with
+the chosen tolerance. It does not require their original boundaries to overlap.
+For the visual illustration, buffer each polygon by **half** the tolerance:
+expanding both polygons by the full tolerance would illustrate twice the
+intended separation. Curved buffers are approximations; neighbor status always
+comes from the distance predicate itself.
+
+```{r inspect-distance-neighbors, eval = TRUE, echo = TRUE, fig.width = 10, fig.height = 7}
+neighbor_list <- sf::st_is_within_distance(
+  example_cells, dist = proximity_threshold, remove_self = TRUE
+)
+knitr::kable(neighbor_table(neighbor_list), caption = "Neighbors within the selected distance")
+distance_plot <- plot_neighbor_status(example_cells, neighbor_list, "Within distance tolerance")
+buffered_cells <- sf::st_buffer(example_cells, dist = proximity_threshold / 2)
+buffer_plot <- plot_neighbor_status(buffered_cells, neighbor_list, "Half-distance buffers")
+neighbor_inspection <- intersection_plot + distance_plot + buffer_plot +
+  plot_layout(ncol = 1, guides = "collect") + plot_annotation(tag_levels = "A") &
+  theme(legend.position = "bottom")
+neighbor_inspection
+save_figure(neighbor_inspection, "InspectingNeighbors.png", width = 10, height = 7)
+```
+
+# Polygon geometry {#sec-polygon-geometry}
+
+Based on `Vignettes/polygonGeometry.Rmd`.
+
+Measure polygon area, diameter, and perimeter for the full crop. Store these
+features on the GraphSpace object so the remaining chapters can reuse them.
+
+## Calculate spatial metrics once
+
+The diameter is the maximum Euclidean distance between polygon vertices.
+Remove duplicate closing vertices rather than discarding a vertex by position.
+`lwgeom::st_perimeter_lwgeom()` supplies the polygon perimeter explicitly.
+
+```{r spatial-metrics, eval = TRUE, echo = TRUE}
+maxDistPol <- function(polygon) {
+  vertices <- unique(sf::st_coordinates(polygon)[, c("X", "Y"), drop = FALSE])
+  if (nrow(vertices) < 2L) return(0)
+  max(stats::dist(vertices))
+}
+metric_names <- c("area", "perimeter", "maxDist")
+spatial_metrics <- data.frame(
+  cell = cell_names,
+  area = as.numeric(sf::st_area(cell_geometry)),
+  perimeter = as.numeric(lwgeom::st_perimeter_lwgeom(cell_geometry)),
+  maxDist = vapply(seq_along(cell_geometry), function(i) {
+    maxDistPol(cell_geometry[i])
+  }, numeric(1))
+)
+stopifnot(all(is.finite(as.matrix(spatial_metrics[metric_names]))))
+stopifnot(all(as.matrix(spatial_metrics[metric_names]) > 0))
+for (metric in metric_names) {
+  gs_vertex_attr(gs_crop, metric) <- spatial_metrics[[metric]]
+}
+meanMaxDist <- mean(spatial_metrics$maxDist)
+write.csv(spatial_metrics, file.path(result_dir, "cell-spatial-metrics.csv"), row.names = FALSE)
+knitr::kable(summary(spatial_metrics[metric_names]), digits = 6)
+```
+
+```{r metric-distributions, eval = TRUE, echo = TRUE}
+plot_distribution <- function(data, feature, label) {
+  ggplot(data, aes(x = "", y = .data[[feature]])) +
+    geom_violin(fill = "#d2e8e7", colour = "#285e67") +
+    geom_boxplot(width = 0.12, outlier.size = 0.35, alpha = 0.6) +
+    theme_minimal() + labs(x = NULL, y = label)
+}
+metric_plots <- lapply(metric_names, function(metric) {
+  plot_distribution(spatial_metrics, metric, metric)
+})
+spatial_feature_plot <- wrap_plots(metric_plots, nrow = 1) +
+  plot_annotation(title = "Cell polygon spatial metrics")
+spatial_feature_plot
+save_figure(spatial_feature_plot, "SpatialFeatures_RawCrop.png", width = 10, height = 4)
+plot_distribution(gs_crop@nodes, "nCount_Xenium", "Xenium counts") +
+  plot_distribution(gs_crop@nodes, "nFeature_Xenium", "Detected features")
+```
+
+## Correlate expression with spatial features
+
+To retain the analysis in the vignette, these are correlations with the **raw
+expression counts** stored in the crop. They are exploratory: library size,
+cell area, cropping, and spatial dependence can affect the associations. A
+normalized expression analysis on the full tissue is a useful follow-up.
+
+Align expression rows to cell identifiers explicitly and remove genes with no
+variation. Calculate both methods through one function. Adjust P-values over
+all gene-by-feature tests within each method using Benjamini-Hochberg.
+
+```{r correlation-analysis, eval = TRUE, echo = TRUE}
+expr <- as.matrix(gs_crop@fdata)
+expr <- expr[match(cell_names, rownames(expr)), , drop = FALSE]
+stopifnot(identical(rownames(expr), cell_names), all(is.finite(expr)))
+variable_genes <- apply(expr, 2, stats::sd) > 0
+expr <- expr[, variable_genes, drop = FALSE]
+meta <- spatial_metrics[metric_names]
+stopifnot(ncol(expr) > 0L, all(vapply(meta, stats::sd, numeric(1)) > 0))
+
+correlate_features <- function(method) {
+  fit <- psych::corr.test(
+    x = expr, y = meta, method = method,
+    adjust = "none", use = "pairwise", ci = FALSE
+  )
+  result <- as.data.frame(as.table(fit$r), responseName = "correlation")
+  names(result)[1:2] <- c("gene", "feature")
+  result$gene <- as.character(result$gene)
+  result$feature <- factor(result$feature, levels = metric_names)
+  result$p_value <- as.vector(fit$p)
+  result$p_adjusted <- stats::p.adjust(result$p_value, method = "BH")
+  result$method <- method
+  result
+}
+correlation_results <- setNames(
+  lapply(c("pearson", "spearman"), correlate_features), c("pearson", "spearman")
+)
+all_correlations <- dplyr::bind_rows(correlation_results)
+write.csv(all_correlations, file.path(result_dir, "expression-spatial-correlations.csv"), row.names = FALSE)
+knitr::kable(data.frame(
+  cells = nrow(expr), variable_genes = ncol(expr), spatial_features = ncol(meta),
+  tests_per_method = ncol(expr) * ncol(meta)
+), caption = "Correlation analysis dimensions")
+```
+
+## Plot the significant associations
+
+Use a single rule for both methods: adjusted P-value below 0.01 and absolute
+correlation of at least 0.3. Symmetric color limits retain negative
+associations. Each heatmap derives its gene order from its own results. If no
+associations pass the filters, show that result instead of failing during
+plotting.
+
+```{r correlation-heatmaps, eval = TRUE, echo = TRUE, fig.width = 7, fig.height = 9}
+alpha <- 0.01
+minimum_correlation <- 0.3
+plot_correlations <- function(result, method) {
+  selected <- dplyr::filter(
+    result, is.finite(correlation), !is.na(p_adjusted),
+    p_adjusted < alpha, abs(correlation) >= minimum_correlation
+  )
+  if (nrow(selected) == 0L) {
+    return(ggplot() + annotate("text", x = 0, y = 0, label = "No associations pass the filters") +
+             theme_void() + labs(title = paste(method, "correlations")))
+  }
+  gene_order <- selected |>
+    dplyr::group_by(gene) |>
+    dplyr::summarise(strength = max(abs(correlation)), .groups = "drop") |>
+    dplyr::arrange(strength, gene) |>
+    dplyr::pull(gene)
+  microbiome::heat(
+    as.data.frame(selected), "feature", "gene", fill = "correlation",
+    star = "p_adjusted", p.adj.threshold = alpha,
+    association.threshold = minimum_correlation, filter.significant = FALSE,
+    order.rows = FALSE, order.cols = FALSE,
+    colours = c("#2166ac", "white", "#b2182b"), limits = c(-1, 1),
+    legend.text = method
+  ) + scale_x_discrete(limits = metric_names) + scale_y_discrete(limits = gene_order) +
+    labs(title = paste(method, "expression versus polygon geometry"),
+         caption = "BH-adjusted P < 0.01; absolute correlation >= 0.3", x = NULL, y = NULL)
+}
+for (method in names(correlation_results)) {
+  heatmap <- plot_correlations(correlation_results[[method]], method)
+  print(heatmap)
+  save_figure(heatmap, paste0(method, "-spatial-correlations.png"), width = 7, height = 9)
+}
+significant_correlations <- dplyr::filter(
+  all_correlations, p_adjusted < alpha, abs(correlation) >= minimum_correlation
+)
+write.csv(significant_correlations, file.path(result_dir, "significant-correlations.csv"), row.names = FALSE)
+knitr::kable(as.data.frame(table(significant_correlations$method)),
+             col.names = c("Method", "Significant gene-feature pairs"))
+```
+
+## Polygon centers
+
+A mathematical centroid can lie outside a concave polygon.
+`st_point_on_surface()` supplies an interior point. The existing GraphSpace
+coordinates are retained throughout the network comparisons.
+
+```{r polygon-centers, eval = TRUE, echo = TRUE}
+example_geometry <- sf::st_geometry(example_cells)
+center_comparison <- data.frame(
+  cell = example_cells$vertex,
+  centroid_inside = diag(sf::st_within(
+    sf::st_centroid(example_geometry), example_geometry, sparse = FALSE
+  )),
+  surface_point_inside = diag(sf::st_within(
+    sf::st_point_on_surface(example_geometry), example_geometry, sparse = FALSE
+  ))
+)
+knitr::kable(center_comparison)
+```
+
+# Delaunay and proximity networks {#sec-delaunay-network}
+
+Based on `Vignettes/DelaunayNet.Rmd`.
+
+Delaunay triangulation uses the cell coordinates. The proximity graph uses
+distances between segmentation polygons. Both graphs retain the same cell
+identifiers, so their edges can be compared as labeled cell pairs.
+
+## Build the Delaunay graph
+
+```{r delaunay-graph, eval = TRUE, echo = TRUE}
+xy <- as.matrix(gs_crop@nodes[, c("x", "y")])
+stopifnot(all(is.finite(xy)), !anyDuplicated(as.data.frame(xy)))
+triangulation <- deldir::deldir(xy[, 1], xy[, 2], suppressMsge = TRUE)
+triangulation_indices <- triangulation$delsgs[, c("ind1", "ind2")]
+delaunay_edges <- data.frame(
+  from = cell_names[triangulation_indices$ind1],
+  to = cell_names[triangulation_indices$ind2]
+)
+gs_crop_dnay <- gs_add_edges(gs_crop, delaunay_edges)
+gs_edge_attr(gs_crop_dnay, "arrowType") <- 0
+stopifnot(
+  igraph::ecount(gs_crop_dnay@graph) == nrow(delaunay_edges),
+  igraph::is_simple(gs_crop_dnay@graph)
+)
+knitr::kable(utils::head(delaunay_edges), caption = "Delaunay edges mapped to cell names")
+```
+
+## Prepare reusable proximity candidates
+
+Find candidate pairs once at the largest distance used in the book. Compute
+their exact polygon distances and retain one row per undirected pair. Any
+smaller threshold can then filter this table without repeating a full spatial
+query. The helper checks its distance range and cell identifiers before adding
+edges.
+
+```{r proximity-helper, eval = TRUE, echo = TRUE}
+maximum_distance <- max(distance_grid)
+candidate_neighbors <- sf::st_is_within_distance(
+  cell_geometry, dist = maximum_distance, remove_self = TRUE
+)
+candidate_indices <- data.frame(
+  from_index = rep(seq_along(candidate_neighbors), lengths(candidate_neighbors)),
+  to_index = unlist(candidate_neighbors, use.names = FALSE)
+)
+candidate_indices <- candidate_indices[
+  candidate_indices$from_index < candidate_indices$to_index, , drop = FALSE
+]
+proximity_candidates <- data.frame(
+  from = cell_names[candidate_indices$from_index],
+  to = cell_names[candidate_indices$to_index],
+  distance = as.numeric(sf::st_distance(
+    cell_geometry[candidate_indices$from_index],
+    cell_geometry[candidate_indices$to_index], by_element = TRUE
+  ))
+)
+stopifnot(
+  !anyDuplicated(proximity_candidates[c("from", "to")]),
+  all(is.finite(proximity_candidates$distance)),
+  all(proximity_candidates$distance <= maximum_distance + 1e-12)
+)
+gs_neighbors <- function(gs, dist) {
+  stopifnot(length(dist) == 1L, is.finite(dist), dist >= 0, dist <= maximum_distance)
+  stopifnot(identical(as.character(gs_vertex_attr(gs, "name")), cell_names))
+  stopifnot(igraph::ecount(gs@graph) == 0L)
+  edges <- proximity_candidates[
+    proximity_candidates$distance <= dist, c("from", "to"), drop = FALSE
+  ]
+  if (nrow(edges) == 0L) return(gs)
+  result <- gs_add_edges(gs, edges)
+  gs_edge_attr(result, "arrowType") <- 0
+  stopifnot(igraph::is_simple(result@graph), igraph::ecount(result@graph) == nrow(edges))
+  result
+}
+gs_crop_prox <- gs_neighbors(gs_crop, dist = proximity_threshold)
+write.csv(proximity_candidates, file.path(result_dir, "proximity-candidate-distances.csv"), row.names = FALSE)
+```
+
+## Compare the graph views
+
+The polygon diameters calculated in Chapter 2 are already attached to both
+graph objects. Plot segmentation, cell coordinates, and the two edge sets.
+
+```{r network-comparison, eval = TRUE, echo = TRUE, fig.width = 10, fig.height = 10}
+network_panels <- list(
+  plot_cells(gs_crop, colour_by_expression = FALSE, title = "Cell segmentation"),
+  plot_cells(gs_crop, polygons = FALSE, colour_by_expression = FALSE,
+             node_size = 0.4, title = "Cell coordinates"),
+  plot_cells(gs_crop_dnay, polygons = FALSE, edges = TRUE,
+             colour_by_expression = FALSE, title = "Delaunay triangulation"),
+  plot_cells(gs_crop_prox, polygons = FALSE, edges = TRUE,
+             colour_by_expression = FALSE, title = "Polygon proximity")
+)
+delaunay_figure <- wrap_plots(network_panels[1:3], nrow = 1) + plot_annotation(tag_levels = "A")
+network_comparison <- wrap_plots(network_panels, ncol = 2) + plot_annotation(tag_levels = "A")
+network_comparison
+save_figure(delaunay_figure, "GraphSpace_Delaunay.png", width = 12, height = 4)
+save_figure(network_comparison, "GraphSpace_Delaunay_Proximity.png", width = 10, height = 10)
+```
+
+## Compare labeled edge sets
+
+Canonical edge keys preserve cell identity when checking shared and unique
+pairs. The subset result and edge counts are calculated from this render's
+data rather than copied from a previous run.
+
+```{r labeled-edge-comparison, eval = TRUE, echo = TRUE}
+edge_keys <- function(graph) {
+  edges <- igraph::as_data_frame(graph, what = "edges")
+  paste(pmin(edges$from, edges$to), pmax(edges$from, edges$to), sep = "|")
+}
+delaunay_keys <- edge_keys(gs_crop_dnay@graph)
+proximity_keys <- edge_keys(gs_crop_prox@graph)
+edge_comparison <- data.frame(
+  metric = c("Delaunay edges", "Proximity edges", "Shared edges", "Delaunay only", "Proximity only"),
+  value = c(length(delaunay_keys), length(proximity_keys),
+            length(intersect(delaunay_keys, proximity_keys)),
+            length(setdiff(delaunay_keys, proximity_keys)),
+            length(setdiff(proximity_keys, delaunay_keys)))
+)
+knitr::kable(edge_comparison)
+cat("Every proximity edge is also a Delaunay edge:", all(proximity_keys %in% delaunay_keys))
+write.csv(edge_comparison, file.path(result_dir, "network-edge-comparison.csv"), row.names = FALSE)
+```
+
+```{r network-overlay, eval = TRUE, echo = TRUE}
+network_overlay <- ggplot() +
+  edge_layer(gs_crop_dnay, colour = "grey45", alpha = 0.6) +
+  edge_layer(gs_crop_prox, colour = "#cf3b36", alpha = 0.7) +
+  geom_point(data = gs_crop_dnay@nodes, aes(x = x, y = y), colour = "black", size = 0.2, pch = 19) +
+  coord_equal() + theme_minimal() + labs(
+    title = "Delaunay (grey) and proximity (red) networks",
+    x = "Tissue coordinate 1", y = "Tissue coordinate 2"
+  )
+network_overlay
+save_figure(network_overlay, "GraphSpace_Network_Overlay.png", width = 8, height = 7)
+```
+
+# Setting the proximity distance {#sec-setting-distance}
+
+Based on `Vignettes/SettingDist_proximityNetwork.Rmd`.
+
+Explore thresholds from 0 to 0.002 in increments of 0.0001. The candidate
+distance table from Chapter 3 makes this sweep inexpensive. Store plots in a
+list so that each entry remains a complete ggplot object.
+
+## Build the distance sweep
+
+```{r distance-sweep, eval = TRUE, echo = TRUE}
+edges_by_dist <- data.frame(dist = distance_grid, edges = integer(length(distance_grid)))
+sweep_plots <- vector("list", length(distance_grid) + 1L)
+sweep_plots[[1L]] <- plot_cells(
+  gs_crop, polygons = FALSE, colour_by_expression = FALSE, title = "Cell proximity: no edges"
+)
+sweep_started <- Sys.time()
+for (i in seq_along(distance_grid)) {
+  gs_prox <- gs_neighbors(gs_crop, dist = distance_grid[i])
+  edges_by_dist$edges[i] <- igraph::ecount(gs_prox@graph)
+  sweep_plots[[i + 1L]] <- plot_cells(
+    gs_prox, polygons = FALSE, edges = TRUE, colour_by_expression = FALSE,
+    edge_colour = "#cf3b36", title = sprintf("Cell proximity: distance = %.4f", distance_grid[i])
+  )
+}
+sweep_seconds <- as.numeric(difftime(Sys.time(), sweep_started, units = "secs"))
+stopifnot(all(diff(edges_by_dist$edges) >= 0L))
+knitr::kable(edges_by_dist, digits = 4, caption = "Edges at each polygon distance threshold")
+cat(sprintf("Graph construction and plot preparation: %.2f seconds", sweep_seconds))
+write.csv(edges_by_dist, file.path(result_dir, "edges-by-distance.csv"), row.names = FALSE)
+```
+
+## Save frames and render the animation
+
+The frame directory is created in the shared setup. PNG dimensions match the
+GIF dimensions. The animation includes all tested thresholds, starting at zero.
+
+```{r distance-animation, eval = TRUE, echo = TRUE}
+frame_files <- vapply(seq_along(sweep_plots), function(i) {
+  path <- file.path(frame_dir, sprintf("frame_%03d.png", i))
+  ggplot2::ggsave(path, plot = sweep_plots[[i]], width = 6, height = 6,
+                  units = "in", dpi = 120, bg = "white")
+  path
+}, character(1))
+gif_file <- file.path(figure_dir, "CellProx_Dist.gif")
+gifski::gifski(
+  png_files = frame_files[-1L], gif_file = gif_file,
+  width = 720, height = 720, delay = 0.2, progress = FALSE
+)
+knitr::include_graphics(gif_file)
+```
+
+## Relate distance to network size and cell diameter
+
+Reuse the mean diameter from Chapter 2. The diameter ratio expresses the
+threshold relative to polygon size in the same normalized coordinate system.
+
+```{r distance-summary, eval = TRUE, echo = TRUE}
+edge_count_plot <- ggplot(edges_by_dist, aes(x = dist, y = edges)) +
+  geom_line(colour = "#285e67") + geom_point(colour = "#285e67", size = 1.5) +
+  geom_vline(xintercept = proximity_threshold, linetype = 2, colour = "#cf3b36") +
+  theme_minimal() + labs(x = "Polygon distance threshold", y = "Number of edges")
+edge_count_plot
+save_figure(edge_count_plot, "Proximity_Distance_NumberEdges.png", width = 8, height = 4.5)
+knitr::kable(data.frame(
+  selected_distance = proximity_threshold,
+  mean_polygon_diameter = meanMaxDist,
+  distance_to_diameter_ratio = proximity_threshold / meanMaxDist
+), digits = 6)
+```
+
+# Visualizing direct neighbors {#sec-direct-neighbors}
+
+Based on `Vignettes/Visualizing_DirectNeighbors.Rmd`.
+
+Reuse the proximity graph built in Chapter 3. First compare an edge-only view
+with edges over the segmentation polygons; then focus on a smaller region and
+vary the edge and node rendering.
+
+## View the neighbor network
+
+```{r direct-neighbor-network, eval = TRUE, echo = TRUE}
+direct_neighbor_views <- plot_cells(
+  gs_crop_prox, polygons = FALSE, edges = TRUE, colour_by_expression = FALSE,
+  edge_colour = "#cf3b36", title = "Direct neighbor edges"
+) + plot_cells(
+  gs_crop_prox, nodes = FALSE, edges = TRUE, edge_colour = "#cf3b36",
+  edge_alpha = 0.3, title = "Edges over cell segmentation"
+) + plot_annotation(tag_levels = "A")
+direct_neighbor_views
+save_figure(direct_neighbor_views, "DirectNeighbors_Overview.png", width = 11, height = 5)
+```
+
+## Crop and normalize the close-up
+
+```{r direct-neighbor-crop, eval = TRUE, echo = TRUE}
+gs_neig2 <- cropGraphSpace(
+  gs_crop_prox, xmin = 0.45, xmax = 0.6, ymin = 0.2, ymax = 0.35
+)
+stopifnot(nrow(gs_neig2@nodes) > 0L)
+gs_neig2 <- normalizeGraphSpace(gs_neig2, mar = 0, norm.geometry = TRUE)
+closeup_edges <- plot_cells(
+  gs_neig2, nodes = FALSE, edges = TRUE, edge_colour = "#cf3b36",
+  edge_alpha = 0.8, title = "Direct neighbors in the cropped region",
+  edge_engine = "graphspace"
+)
+closeup_edges
+save_figure(closeup_edges, "DirectNeighbors_Edges1.png", width = 7, height = 4)
+```
+
+## Compare edge rendering
+
+Retain the vignette's arrow type and transparent-node experiment. Both variants
+use the same plotting function defined in Chapter 1.
+
+```{r direct-neighbor-rendering, eval = TRUE, echo = TRUE}
+gs_edge_attr(gs_neig2, "arrowType") <- "13|-|13"
+rendering_variants <- list(
+  plot_cells(gs_neig2, nodes = FALSE, edges = TRUE, edge_alpha = 0.8,
+             title = "Arrow type 13|-|13", edge_engine = "graphspace"),
+  plot_cells(gs_neig2, nodes = TRUE, edges = TRUE, edge_alpha = 0.8,
+             node_size = 15, node_alpha = 0, title = "Transparent node layer",
+             edge_engine = "graphspace")
+)
+for (i in seq_along(rendering_variants)) {
+  print(rendering_variants[[i]])
+  save_figure(rendering_variants[[i]], sprintf("DirectNeighbors_Edges%d.png", i + 1L),
+              width = 7, height = 4)
+}
+knitr::kable(data.frame(
+  closeup_cells = nrow(gs_neig2@nodes), closeup_edges = igraph::ecount(gs_neig2@graph)
+))
+```
+
+## Reproducibility and output checks
+
+The output checks verify the main analysis tables, generated figures, frame
+files, animation, graph consistency, and threshold sweep. Package versions and
+session information are saved alongside the result tables.
+
+```{r final-checks, eval = TRUE, echo = TRUE}
+stopifnot(
+  nrow(spatial_metrics) == length(cell_names),
+  identical(as.character(gs_vertex_attr(gs_crop_dnay, "name")), cell_names),
+  identical(as.character(gs_vertex_attr(gs_crop_prox, "name")), cell_names),
+  igraph::is_simple(gs_crop_dnay@graph), igraph::is_simple(gs_crop_prox@graph),
+  all(diff(edges_by_dist$edges) >= 0L),
+  all(file.exists(frame_files)), file.exists(gif_file), file.info(gif_file)$size > 0
+)
+capture.output(sessionInfo(), file = file.path(result_dir, "session-info.txt"))
+write.csv(data.frame(
+  dataset = basename(data_file), md5 = unname(tools::md5sum(data_file)),
+  selected_distance = proximity_threshold, maximum_distance = maximum_distance,
+  mean_polygon_diameter = meanMaxDist
+), file.path(result_dir, "render-inputs.csv"), row.names = FALSE)
+knitr::kable(data.frame(
+  output = c("Figures and animation", "Animation frames", "Analysis tables and session information"),
+  directory = c("Book/figures", "Book/frames", "Book/results")
+))
+sessionInfo()
+```
+
+## References and source vignettes
+
+The five source vignettes are `InspectingNeighbors.Rmd`, `polygonGeometry.Rmd`,
+`DelaunayNet.Rmd`, `SettingDist_proximityNetwork.Rmd`, and
+`Visualizing_DirectNeighbors.Rmd`, all in the project's `Vignettes` directory.
+
+For the spatial graph and geometry APIs, see the
+[RGraphSpace nested geometries tutorial](https://sysbiolab.github.io/RGraphSpace/articles/nested-geometries.html),
+[GraphSpace accessors and transformations](https://sysbiolab.github.io/RGraphSpace/articles/graphspace-accessors.html),
+and the [sf geometric predicate reference](https://r-spatial.github.io/sf/reference/geos_binary_pred.html).
+The HTML is produced with [Quarto](https://quarto.org/docs/output-formats/html-basics.html).
