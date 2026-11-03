@@ -43,9 +43,18 @@ try {
 
     Push-Location -LiteralPath $bookDirectory
     try {
-        & $quarto render 'XeniumCellCombook.qmd' --to html 2>&1 |
+        # Finish the HTML build before replacing a book that may be open in a browser.
+        $stagedOutputName = '_XeniumCellCombook.build.html'
+        & $quarto render 'XeniumCellCombook.qmd' --to html --output $stagedOutputName 2>&1 |
             Tee-Object -FilePath (Join-Path $bookDirectory 'render.log')
         if ($LASTEXITCODE -ne 0) { throw "Quarto render failed with exit code $LASTEXITCODE." }
+        Move-Item -LiteralPath (Join-Path $bookDirectory $stagedOutputName) `
+            -Destination (Join-Path $bookDirectory 'XeniumCellCombook.html') -Force
+        $stagedMarkdown = Join-Path $bookDirectory ($stagedOutputName + '.md')
+        if (Test-Path -LiteralPath $stagedMarkdown) {
+            Move-Item -LiteralPath $stagedMarkdown `
+                -Destination (Join-Path $bookDirectory 'XeniumCellCombook.html.md') -Force
+        }
     } finally {
         Pop-Location
     }

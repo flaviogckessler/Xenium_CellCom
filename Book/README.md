@@ -1,4 +1,12 @@
-# Xenium Cell Com book
+# Xenium Cell-Cell Communication Book
+
+By **Flávio Gabriel Carazza-Kessler**, PhD candidate in Bioinformatics at the
+Federal University of Paraná (UFPR).
+
+[GitHub](https://github.com/flaviogckessler) ·
+[LinkedIn](https://www.linkedin.com/in/flaviogckessler/) ·
+[Lattes](http://lattes.cnpq.br/0370990742893359) ·
+[Google Scholar](https://scholar.google.com.br/citations?user=DYrSfHYAAAAJ&hl=pt-BR&oi=ao)
 
 The complete source is **XeniumCellCombook.qmd**. It produces **XeniumCellCombook.html**, one portable
 HTML volume with five numbered chapters, in this order:
@@ -21,7 +29,9 @@ From this folder, render with:
 ```
 
 The helper finds Quarto (including RStudio's bundled copy) and uses a local
-temporary folder to avoid Windows temporary-path issues. The source also works
+temporary folder to avoid Windows temporary-path issues. It builds a temporary
+HTML file before replacing `XeniumCellCombook.html`, which avoids writing the
+book in place while it is being viewed. The source also works
 with `quarto render "XeniumCellCombook.qmd" --to html` in a configured R
 and Quarto environment.
 
@@ -41,5 +51,7 @@ The book consolidates shared setup, computes spatial metrics and candidate
 distances once, preserves raw-count correlations as exploratory analyses,
 uses symmetric correlation color limits, applies one significance rule to
 both correlation methods, compares edges by cell identity, and stores complete
-plot objects in a list for the distance animation. Existing vignettes and
+plot objects in a list for the distance animation. Spatial figures use explicit
+`ggplot(GraphSpace)` calls with `geom_nodespace()`, `geom_edgespace()`, and
+`geom_sf()` following the source scripts and vignettes. Existing vignettes and
 the project's original image files are not edited by the render.

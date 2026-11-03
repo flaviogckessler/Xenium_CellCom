@@ -1,6 +1,10 @@
 ---
-title: "Xenium Cell Com book"
+title: "Xenium Cell-Cell Communication Book"
 subtitle: "Cell geometry, spatial neighbors, and proximity networks"
+author:
+  - name: "Flávio Gabriel Carazza-Kessler"
+    url: "https://github.com/flaviogckessler"
+    affiliation: "Federal University of Paraná (UFPR)"
 output-file: "XeniumCellCombook.html"
 keep-md: true
 lang: en
@@ -41,11 +45,22 @@ Delaunay and polygon proximity graphs, explores the distance threshold, and
 finishes with close-up views of direct neighbors. Each numbered chapter
 corresponds to one vignette.
 
-The chapters share one R session. Packages, data, plotting helpers, spatial
-metrics, and neighbor candidates are prepared once and reused. The HTML
-contains its figures and animation, so it can be read offline.
+The chapters share one R session. Packages, data, spatial metrics, and neighbor
+candidates are prepared once and reused. Spatial figures show the explicit
+`ggplot()` calls and RGraphSpace geoms used in the scripts and vignettes. The
+HTML contains its figures and animation, so it can be read offline.
 
 # Before you begin {.unnumbered}
+
+## About the author {.unnumbered}
+
+**Flávio Gabriel Carazza-Kessler** is a PhD candidate in Bioinformatics at the
+Federal University of Paraná (UFPR).
+
+[GitHub](https://github.com/flaviogckessler) ·
+[LinkedIn](https://www.linkedin.com/in/flaviogckessler/) ·
+[Lattes](http://lattes.cnpq.br/0370990742893359) ·
+[Google Scholar](https://scholar.google.com.br/citations?user=DYrSfHYAAAAJ&hl=pt-BR&oi=ao)
 
 ## Paths and execution {.unnumbered}
 
@@ -204,91 +219,14 @@ Cell segmentation polygons can identify nearby cells even when their boundaries
 do not overlap. This chapter compares polygon intersection with a small
 distance tolerance using the first nine cells of the crop.
 
-## A reusable cell plot
+## Plot cells with RGraphSpace
 
-Define the common plotting and saving functions once. Later chapters change
-the layers and their appearance through arguments, using the same palette
-and coordinate theme. Overview networks and animation frames use vectorized
-line segments. Detailed GraphSpace edge glyphs are used for the close-up
-styling examples in Chapter 5.
+Use the same explicit `ggplot()` calls and spatial geoms as the source
+vignettes. `geom_nodespace()` draws cell coordinates, while `geom_sf()` draws
+segmentation polygons. A shared theme and expression palette keep the views
+comparable. The export helper saves each completed plot in the book folder.
 
-```{r cell-plot-helper, eval = TRUE, echo = TRUE}
-edge_layer <- function(gs, colour = "black", alpha = 0.6) {
-  edges <- igraph::as_data_frame(gs@graph, what = "edges")
-  names <- as.character(gs_vertex_attr(gs, "name"))
-  from <- match(edges$from, names)
-  to <- match(edges$to, names)
-  segments <- data.frame(
-    x = gs@nodes$x[from], y = gs@nodes$y[from],
-    xend = gs@nodes$x[to], yend = gs@nodes$y[to]
-  )
-  geom_segment(
-    data = segments, aes(x = x, y = y, xend = xend, yend = yend),
-    inherit.aes = FALSE, colour = colour, alpha = alpha, linewidth = 0.2
-  )
-}
-plot_cells <- function(gs, polygons = TRUE, nodes = TRUE, edges = FALSE,
-                       colour_by_expression = TRUE, edge_colour = "black",
-                       edge_alpha = 0.6, node_size = 0.2, node_alpha = 1,
-                       title = NULL, edge_engine = c("segments", "graphspace")) {
-  edge_engine <- match.arg(edge_engine)
-  native_edges <- edge_engine == "graphspace"
-  if (native_edges) {
-    p <- ggplot(gs)
-  } else {
-    plot_data <- sf::st_as_sf(gs@nodes)
-    expression_rows <- match(as.character(plot_data$name), rownames(gs@fdata))
-    stopifnot(!anyNA(expression_rows))
-    plot_data$Slc17a7 <- as.numeric(gs@fdata[expression_rows, "Slc17a7"])
-    p <- ggplot(plot_data)
-  }
-  if (polygons) {
-    if (colour_by_expression) {
-      p <- p + geom_sf(
-        aes(geometry = geometry, fill = log2(Slc17a7 + 1)),
-        colour = "grey65", linewidth = 0.05
-      ) + scale_fill_gradientn(colours = cpal, limits = data_range, name = "log2(Slc17a7 + 1)")
-    } else {
-      p <- p + geom_sf(aes(geometry = geometry), fill = "grey92", linewidth = 0.08)
-    }
-  }
-  if (edges && igraph::ecount(gs@graph) > 0L) {
-    p <- p + if (native_edges) {
-      geom_edgespace(colour = edge_colour, alpha = edge_alpha)
-    } else {
-      edge_layer(gs, colour = edge_colour, alpha = edge_alpha)
-    }
-  }
-  if (nodes) {
-    if (!polygons && colour_by_expression) {
-      layer <- if (native_edges) {
-        geom_nodespace(aes(colour = log2(Slc17a7 + 1)),
-                       size = node_size, pch = 19, alpha = node_alpha)
-      } else {
-        geom_point(aes(x = x, y = y, colour = log2(Slc17a7 + 1)),
-                    size = node_size, pch = 19, alpha = node_alpha)
-      }
-      p <- p + layer + scale_colour_gradientn(
-        colours = cpal, limits = data_range, name = "log2(Slc17a7 + 1)"
-      )
-    } else {
-      layer <- if (native_edges) {
-        geom_nodespace(colour = "black", size = node_size, pch = 19, alpha = node_alpha)
-      } else {
-        geom_point(aes(x = x, y = y), colour = "black",
-                    size = node_size, pch = 19, alpha = node_alpha)
-      }
-      p <- p + layer
-    }
-  }
-  if (native_edges) {
-    p <- p + my_theme
-  } else {
-    p <- p + (if (polygons) coord_sf(datum = NA) else coord_equal()) +
-      theme_minimal() + labs(x = "Tissue coordinate 1", y = "Tissue coordinate 2")
-  }
-  p + labs(title = title)
-}
+```{r figure-export, eval = TRUE, echo = TRUE}
 save_figure <- function(plot, filename, width = 9, height = 6) {
   ggplot2::ggsave(
     filename = file.path(figure_dir, filename), plot = plot,
@@ -298,8 +236,20 @@ save_figure <- function(plot, filename, width = 9, height = 6) {
 ```
 
 ```{r crop-expression, eval = TRUE, echo = TRUE}
-expression_view <- plot_cells(gs_crop, polygons = FALSE, node_size = 1)
-segmentation_view <- plot_cells(gs_crop)
+expression_view <- ggplot(gs_crop) +
+  geom_nodespace(
+    mapping = aes(colour = log2(Slc17a7 + 1)),
+    size = 1.5, pch = 19
+  ) +
+  scale_colour_continuous(palette = cpal, limits = data_range) +
+  my_theme
+
+segmentation_view <- ggplot(gs_crop) +
+  geom_sf(mapping = aes(geometry = geometry, fill = log2(Slc17a7 + 1))) +
+  scale_fill_continuous(palette = cpal, limits = data_range) +
+  geom_nodespace(colour = "black", size = 0.2, pch = 19) +
+  my_theme
+
 expression_view + segmentation_view +
   plot_annotation(title = "Cell coordinates and segmentation", tag_levels = "A")
 ```
@@ -324,17 +274,15 @@ neighbor_table <- function(neighbor_list) {
 }
 knitr::kable(neighbor_table(intersect_list), caption = "Neighbors from polygon intersection")
 
-plot_neighbor_status <- function(cells, neighbor_list, title) {
-  cells$status <- factor(
-    ifelse(lengths(neighbor_list) > 0L, "Yes", "No"), levels = c("No", "Yes")
-  )
-  ggplot(cells) +
-    geom_sf(aes(fill = status), linewidth = 0.3, show.legend = TRUE) +
-    geom_text(aes(x = x, y = y, label = vertex), size = 3) +
-    scale_fill_manual(values = c(Yes = "#2b8cbe", No = "grey85"), drop = FALSE) +
-    theme_minimal() + labs(title = title, fill = "Has neighbor?", x = "x", y = "y")
-}
-intersection_plot <- plot_neighbor_status(example_cells, intersect_list, "Intersecting polygons")
+example_cells$status <- factor(
+  ifelse(lengths(intersect_list) > 0L, "Yes", "No"), levels = c("No", "Yes")
+)
+intersection_plot <- ggplot(data = example_cells) +
+  geom_sf(aes(fill = status), show.legend = TRUE) +
+  geom_text(aes(x = x, y = y, label = vertex), size = 3) +
+  scale_fill_manual(values = c(Yes = "#2b8cbe", No = "grey85"), drop = FALSE) +
+  theme_minimal() +
+  labs(title = "Intersecting polygons", fill = "Has neighbor?", x = "x", y = "y")
 ```
 
 ## Neighbors within a distance
@@ -351,9 +299,24 @@ neighbor_list <- sf::st_is_within_distance(
   example_cells, dist = proximity_threshold, remove_self = TRUE
 )
 knitr::kable(neighbor_table(neighbor_list), caption = "Neighbors within the selected distance")
-distance_plot <- plot_neighbor_status(example_cells, neighbor_list, "Within distance tolerance")
+example_cells$status <- factor(
+  ifelse(lengths(neighbor_list) > 0L, "Yes", "No"), levels = c("No", "Yes")
+)
+distance_plot <- ggplot(data = example_cells) +
+  geom_sf(aes(fill = status), show.legend = TRUE) +
+  geom_text(aes(x = x, y = y, label = vertex), size = 3) +
+  scale_fill_manual(values = c(Yes = "#2b8cbe", No = "grey85"), drop = FALSE) +
+  theme_minimal() +
+  labs(title = "Within distance tolerance", fill = "Has neighbor?", x = "x", y = "y")
+
 buffered_cells <- sf::st_buffer(example_cells, dist = proximity_threshold / 2)
-buffer_plot <- plot_neighbor_status(buffered_cells, neighbor_list, "Half-distance buffers")
+buffer_plot <- ggplot(data = buffered_cells) +
+  geom_sf(aes(fill = status), show.legend = TRUE) +
+  geom_text(aes(x = x, y = y, label = vertex), size = 3) +
+  scale_fill_manual(values = c(Yes = "#2b8cbe", No = "grey85"), drop = FALSE) +
+  theme_minimal() +
+  labs(title = "Half-distance buffers", fill = "Has neighbor?", x = "x", y = "y")
+
 neighbor_inspection <- intersection_plot + distance_plot + buffer_plot +
   plot_layout(ncol = 1, guides = "collect") + plot_annotation(tag_levels = "A") &
   theme(legend.position = "bottom")
@@ -615,17 +578,37 @@ The polygon diameters calculated in Chapter 2 are already attached to both
 graph objects. Plot segmentation, cell coordinates, and the two edge sets.
 
 ```{r network-comparison, eval = TRUE, echo = TRUE, fig.width = 10, fig.height = 10}
-network_panels <- list(
-  plot_cells(gs_crop, colour_by_expression = FALSE, title = "Cell segmentation"),
-  plot_cells(gs_crop, polygons = FALSE, colour_by_expression = FALSE,
-             node_size = 0.4, title = "Cell coordinates"),
-  plot_cells(gs_crop_dnay, polygons = FALSE, edges = TRUE,
-             colour_by_expression = FALSE, title = "Delaunay triangulation"),
-  plot_cells(gs_crop_prox, polygons = FALSE, edges = TRUE,
-             colour_by_expression = FALSE, title = "Polygon proximity")
-)
-delaunay_figure <- wrap_plots(network_panels[1:3], nrow = 1) + plot_annotation(tag_levels = "A")
-network_comparison <- wrap_plots(network_panels, ncol = 2) + plot_annotation(tag_levels = "A")
+segmentation_plot <- ggplot(gs_crop) +
+  geom_sf(mapping = aes(geometry = geometry)) +
+  geom_nodespace(colour = "black", size = 0.2, pch = 19) +
+  theme_gspace_coords(theme = "th3", is_norm = TRUE) +
+  theme_minimal() +
+  labs(title = "Cell segmentation", x = NULL, y = NULL)
+
+coordinate_plot <- ggplot(gs_crop_dnay) +
+  geom_nodespace(colour = "black", size = 0.5, pch = 19) +
+  theme_gspace_coords(theme = "th3", is_norm = TRUE) +
+  theme_minimal() +
+  labs(title = "Cell coordinates", x = NULL, y = NULL)
+
+delaunay_plot <- ggplot(gs_crop_dnay) +
+  geom_edgespace() +
+  geom_nodespace(colour = "black", size = 0.5, pch = 19) +
+  theme_gspace_coords(theme = "th3", is_norm = TRUE) +
+  theme_minimal() +
+  labs(title = "Delaunay triangulation", x = NULL, y = NULL)
+
+proximity_plot <- ggplot(gs_crop_prox) +
+  geom_edgespace() +
+  geom_nodespace(colour = "black", size = 0.5, pch = 19) +
+  theme_gspace_coords(theme = "th3", is_norm = TRUE) +
+  theme_minimal() +
+  labs(title = "Polygon proximity", x = NULL, y = NULL)
+
+delaunay_figure <- segmentation_plot + coordinate_plot + delaunay_plot +
+  plot_layout(nrow = 1) + plot_annotation(tag_levels = "A")
+network_comparison <- segmentation_plot + coordinate_plot + delaunay_plot + proximity_plot +
+  plot_layout(ncol = 2) + plot_annotation(tag_levels = "A")
 network_comparison
 save_figure(delaunay_figure, "GraphSpace_Delaunay.png", width = 12, height = 4)
 save_figure(network_comparison, "GraphSpace_Delaunay_Proximity.png", width = 10, height = 10)
@@ -658,13 +641,13 @@ write.csv(edge_comparison, file.path(result_dir, "network-edge-comparison.csv"),
 
 ```{r network-overlay, eval = TRUE, echo = TRUE}
 network_overlay <- ggplot() +
-  edge_layer(gs_crop_dnay, colour = "grey45", alpha = 0.6) +
-  edge_layer(gs_crop_prox, colour = "#cf3b36", alpha = 0.7) +
-  geom_point(data = gs_crop_dnay@nodes, aes(x = x, y = y), colour = "black", size = 0.2, pch = 19) +
-  coord_equal() + theme_minimal() + labs(
-    title = "Delaunay (grey) and proximity (red) networks",
-    x = "Tissue coordinate 1", y = "Tissue coordinate 2"
-  )
+  geom_edgespace(data = gs_crop_prox, colour = "red") +
+  geom_edgespace(data = gs_crop_dnay, alpha = 1) +
+  geom_nodespace(data = gs_crop_dnay, colour = "black", size = 0.2, pch = 19) +
+  scale_colour_continuous(palette = cpal, limits = data_range) +
+  theme_gspace_coords(theme = "th3", is_norm = TRUE) +
+  theme_minimal() +
+  labs(title = "Delaunay + proximity networks", x = NULL, y = NULL)
 network_overlay
 save_figure(network_overlay, "GraphSpace_Network_Overlay.png", width = 8, height = 7)
 ```
@@ -682,17 +665,26 @@ list so that each entry remains a complete ggplot object.
 ```{r distance-sweep, eval = TRUE, echo = TRUE}
 edges_by_dist <- data.frame(dist = distance_grid, edges = integer(length(distance_grid)))
 sweep_plots <- vector("list", length(distance_grid) + 1L)
-sweep_plots[[1L]] <- plot_cells(
-  gs_crop, polygons = FALSE, colour_by_expression = FALSE, title = "Cell proximity: no edges"
-)
+sweep_plots[[1L]] <- ggplot(gs_crop) +
+  geom_edgespace(colour = "red") +
+  geom_nodespace(colour = "black", size = 0.2, pch = 19) +
+  scale_colour_continuous(palette = cpal, limits = data_range) +
+  theme_gspace_coords(theme = "th3", is_norm = TRUE) +
+  theme_minimal() +
+  labs(title = "Cell proximity: no edges", x = NULL, y = NULL)
+
 sweep_started <- Sys.time()
 for (i in seq_along(distance_grid)) {
   gs_prox <- gs_neighbors(gs_crop, dist = distance_grid[i])
   edges_by_dist$edges[i] <- igraph::ecount(gs_prox@graph)
-  sweep_plots[[i + 1L]] <- plot_cells(
-    gs_prox, polygons = FALSE, edges = TRUE, colour_by_expression = FALSE,
-    edge_colour = "#cf3b36", title = sprintf("Cell proximity: distance = %.4f", distance_grid[i])
-  )
+  sweep_plots[[i + 1L]] <- ggplot(gs_prox) +
+    geom_edgespace(colour = "red") +
+    geom_nodespace(colour = "black", size = 0.2, pch = 19) +
+    scale_colour_continuous(palette = cpal, limits = data_range) +
+    theme_gspace_coords(theme = "th3", is_norm = TRUE) +
+    theme_minimal() +
+    labs(title = sprintf("Cell proximity: distance = %.4f", distance_grid[i]),
+         x = NULL, y = NULL)
 }
 sweep_seconds <- as.numeric(difftime(Sys.time(), sweep_started, units = "secs"))
 stopifnot(all(diff(edges_by_dist$edges) >= 0L))
@@ -751,13 +743,22 @@ vary the edge and node rendering.
 ## View the neighbor network
 
 ```{r direct-neighbor-network, eval = TRUE, echo = TRUE}
-direct_neighbor_views <- plot_cells(
-  gs_crop_prox, polygons = FALSE, edges = TRUE, colour_by_expression = FALSE,
-  edge_colour = "#cf3b36", title = "Direct neighbor edges"
-) + plot_cells(
-  gs_crop_prox, nodes = FALSE, edges = TRUE, edge_colour = "#cf3b36",
-  edge_alpha = 0.3, title = "Edges over cell segmentation"
-) + plot_annotation(tag_levels = "A")
+direct_edges_plot <- ggplot(gs_crop_prox) +
+  geom_edgespace(colour = "red") +
+  geom_nodespace(colour = "black", size = 0.2, pch = 19) +
+  scale_colour_continuous(palette = cpal, limits = data_range) +
+  my_theme +
+  labs(title = "Direct neighbor edges")
+
+direct_segmentation_plot <- ggplot(gs_crop_prox) +
+  geom_sf(mapping = aes(geometry = geometry, fill = log2(Slc17a7 + 1))) +
+  scale_fill_continuous(palette = cpal, limits = data_range) +
+  geom_edgespace(colour = "red", alpha = 0.3) +
+  my_theme +
+  labs(title = "Edges over cell segmentation")
+
+direct_neighbor_views <- direct_edges_plot + direct_segmentation_plot +
+  plot_annotation(tag_levels = "A")
 direct_neighbor_views
 save_figure(direct_neighbor_views, "DirectNeighbors_Overview.png", width = 11, height = 5)
 ```
@@ -770,34 +771,42 @@ gs_neig2 <- cropGraphSpace(
 )
 stopifnot(nrow(gs_neig2@nodes) > 0L)
 gs_neig2 <- normalizeGraphSpace(gs_neig2, mar = 0, norm.geometry = TRUE)
-closeup_edges <- plot_cells(
-  gs_neig2, nodes = FALSE, edges = TRUE, edge_colour = "#cf3b36",
-  edge_alpha = 0.8, title = "Direct neighbors in the cropped region",
-  edge_engine = "graphspace"
-)
+
+closeup_edges <- ggplot(gs_neig2) +
+  geom_sf(mapping = aes(geometry = geometry, fill = log2(Slc17a7 + 1))) +
+  scale_fill_continuous(palette = cpal, limits = data_range) +
+  geom_edgespace(colour = "red", alpha = 0.8) +
+  my_theme
 closeup_edges
 save_figure(closeup_edges, "DirectNeighbors_Edges1.png", width = 7, height = 4)
 ```
 
 ## Compare edge rendering
 
-Retain the vignette's arrow type and transparent-node experiment. Both variants
-use the same plotting function defined in Chapter 1.
+Follow the vignette's explicit plotting calls for the arrow type and
+transparent-node experiment. `geom_edgespace()` uses the graph's edge
+attributes, while `geom_nodespace()` supplies the node layer in the final view.
 
 ```{r direct-neighbor-rendering, eval = TRUE, echo = TRUE}
 gs_edge_attr(gs_neig2, "arrowType") <- "13|-|13"
-rendering_variants <- list(
-  plot_cells(gs_neig2, nodes = FALSE, edges = TRUE, edge_alpha = 0.8,
-             title = "Arrow type 13|-|13", edge_engine = "graphspace"),
-  plot_cells(gs_neig2, nodes = TRUE, edges = TRUE, edge_alpha = 0.8,
-             node_size = 15, node_alpha = 0, title = "Transparent node layer",
-             edge_engine = "graphspace")
-)
-for (i in seq_along(rendering_variants)) {
-  print(rendering_variants[[i]])
-  save_figure(rendering_variants[[i]], sprintf("DirectNeighbors_Edges%d.png", i + 1L),
-              width = 7, height = 4)
-}
+
+closeup_arrow <- ggplot(gs_neig2) +
+  geom_sf(mapping = aes(geometry = geometry, fill = log2(Slc17a7 + 1))) +
+  scale_fill_continuous(palette = cpal, limits = data_range) +
+  geom_edgespace(colour = "black", alpha = 0.8) +
+  my_theme
+closeup_arrow
+save_figure(closeup_arrow, "DirectNeighbors_Edges2.png", width = 7, height = 4)
+
+closeup_transparent <- ggplot(gs_neig2) +
+  geom_sf(mapping = aes(geometry = geometry, fill = log2(Slc17a7 + 1))) +
+  scale_fill_continuous(palette = cpal, limits = data_range) +
+  geom_nodespace(colour = "black", size = 15, pch = 19, alpha = 0) +
+  geom_edgespace(colour = "black", alpha = 0.8) +
+  my_theme
+closeup_transparent
+save_figure(closeup_transparent, "DirectNeighbors_Edges3.png", width = 7, height = 4)
+
 knitr::kable(data.frame(
   closeup_cells = nrow(gs_neig2@nodes), closeup_edges = igraph::ecount(gs_neig2@graph)
 ))
