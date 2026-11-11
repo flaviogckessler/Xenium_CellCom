@@ -6,8 +6,8 @@ gs_neighbors <- function(gs,dist){
   # 'st_is_within_distance()' receives two 'sf' objects and retrieves the same 'sgbp' list returned by the 'st_intersects()' function.
   # The 'dist' parameter is a distance used "expand" the polygons boundaries to assess if they would overlap.
   # If yes, the indices of the overlaping polygons are stored.
-  neighbor_list <- st_is_within_distance(st_as_sf(gs@nodes),
-                                         st_as_sf(gs@nodes),
+  neighbor_list <- st_is_within_distance(st_as_sf(gs[["nodes"]]),
+                                         st_as_sf(gs[["nodes"]]),
                                          dist = dist,
                                          remove_self=TRUE)
   # The 'neighbor_list' is a 'sgbp' list which contains the indices of the intersected 'sf' objects (neighbors)

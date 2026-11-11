@@ -5,13 +5,13 @@ output:
     toc: true
 ---
 
-Build a polygon proximity graph for a Xenium crop and inspect alternative ways to draw direct neighbor edges on cell segmentation plots.
+This vignette builds a polygon proximity graph for a Xenium crop and examines different ways to visualize direct neighbors on cell segmentation plots. In particular, it explains why edges joining cell centroids are not always a good representation of physical contact and shows how to place a representative point in the contact region between neighboring cells.
 
-Source script: [R/Visualizing_DirectNeighbors.R](../R/Visualizing_DirectNeighbors.R). The code below retains the source script's order and comments.
+Source script: [R/Visualizing_DirectNeighbors.R](../R/Visualizing_DirectNeighbors.R). The analysis below retains the source script's order and code.
 
 ## Setup
 
-Enable evaluation and code display for all chunks, and resolve the source script's relative paths from the project root when knitting this file from the Vignettes folder.
+Enable evaluation and code display for all chunks. The source script uses paths relative to the project root, so the knitting root is set to the parent of the `Vignettes` folder.
 
 ```{r setup, eval = TRUE, echo = TRUE}
 knitr::opts_chunk$set(eval = TRUE, echo = TRUE)
@@ -22,9 +22,7 @@ knitr::opts_knit$set(
 
 ## Load packages
 
-Load the spatial graph, geometry, plotting, and animation libraries.
-
-install.packages("gifski")
+Load the packages used for spatial graphs, simple-feature geometry, plotting, graph operations, data manipulation, and GIF support. The installation reminder from the source script is retained as a comment so that knitting the vignette does not install software automatically.
 
 ```{r step-01, eval = TRUE, echo = TRUE}
 library("RGraphSpace")
@@ -32,13 +30,14 @@ library("sf")
 library("ggplot2")
 library("igraph")
 library("dplyr")
-library("gifski")
-library("gridExtra")
+
+#install.packages("gifski")
+library(gifski)
 ```
 
 ## Load the Xenium crop
 
-Download the cropped GraphSpace object if needed and read it into the session.
+Download the crop if it is not already available in the `data` folder, read it, and confirm that it contains a `GraphSpace` object.
 
 ```{r step-02, eval = TRUE, echo = TRUE}
 # download crop
@@ -58,12 +57,11 @@ if (!inherits(gs_crop, "GraphSpace")) {
   stop("O arquivo baixado não contém um objeto da classe GraphSpace.")}
 
 gs_crop
-#########
 ```
 
 ## Configure plotting
 
-Define a shared palette, expression range, and coordinate theme.
+Set a color palette and data range for use across plots, and define a reusable theme for normalized GraphSpace coordinates.
 
 ```{r step-03, eval = TRUE, echo = TRUE}
 # Set color palette and data range for use across plots
@@ -72,22 +70,20 @@ data_range <- c(0, 7)
 # Set a reusable theme
 my_theme <- theme_gspace_coords(theme = "th3", is_norm = TRUE, 
                                 xlab = "Tissue coordinates 1", ylab = "Tissue coordinates 2")
-#########
 ```
 
 ## Load the neighbor helper
 
-Source the function that finds neighbors using segmentation polygons.
+Load the function that finds spot or cell neighbors from the cell segmentation information.
 
 ```{r step-04, eval = TRUE, echo = TRUE}
 # load function that calculate that find the spot/cells neighbors based on the cell segmentation info
 source("R/gs_neighbors_func.R")
-#########
 ```
 
 ## Inspect the segmentation plot
 
-Display the crop with polygons colored by Slc17a7 expression.
+Display the cell segmentation polygons colored by log-transformed `Slc17a7` expression. The cell nodes are added as small black points.
 
 ```{r step-05, eval = TRUE, echo = TRUE}
 p1 <- ggplot(gs_crop) +
@@ -102,14 +98,21 @@ p1 <- ggplot(gs_crop) +
 p1
 ```
 
-## Build and plot the neighbor graph
+## Build the neighbor graph
 
-Construct a graph using the selected polygon distance and plot its edges with and without the segmentation layer.
+Set the proximity threshold, find neighbors from the segmentation polygons, and save the resulting graph. The threshold is expressed in the coordinate system of `gs_crop`.
 
 ```{r step-06, eval = TRUE, echo = TRUE}
-gs_neig <- gs_neighbors(gs_crop,dist=0.0005)
+proximity_threshold <- 0.0005
 
-p1 <- ggplot(gs_neig) +
+gs_neig <- gs_neighbors(gs_crop,dist=proximity_threshold)
+saveRDS(gs_neig,"data/gs_neig.rds")
+```
+
+Plot the neighbor graph first as red edges between black cell nodes.
+
+```{r step-07, eval = TRUE, echo = TRUE}
+p2 <- ggplot(gs_neig) +
   geom_edgespace(color="red")+
   geom_nodespace(color="black",
                  size = .2,pch = 19) +
@@ -117,24 +120,30 @@ p1 <- ggplot(gs_neig) +
   theme_gspace_coords(theme = "th3",is_norm = TRUE)+
   my_theme
 
-p2 <- ggplot(gs_neig) +
+p2
+```
+
+Next, draw the same neighbor edges over the cell segmentation polygons and `Slc17a7` expression.
+
+```{r step-08, eval = TRUE, echo = TRUE}
+p3 <- ggplot(gs_neig) +
   geom_sf(mapping = aes(geometry = geometry,fill = log2(Slc17a7 + 1))) +
   scale_fill_continuous(palette = cpal, limits = data_range) +
   #geom_nodespace(colour = "black", size = 0.2, pch = 19) +
   geom_edgespace(color="red",alpha=0.3)+
   my_theme
 
-grid.arrange(p1,p2,ncol=2)
+p3
 ```
 
 ## Inspect a smaller region
 
-Crop and normalize the graph, then save a close-up of the neighbor edges.
+Crop to a smaller region and re-normalize its coordinates. This close-up makes it easier to inspect how the neighbor edges relate to the cell polygons.
 
-```{r step-07, eval = TRUE, echo = TRUE}
+```{r step-09, eval = TRUE, echo = TRUE}
 # Crop to the smaller region and re-normalize coordinates
-gs_neig2 <- cropGraphSpace(gs_neig, 
-                           xmin = 0.45, xmax = 0.6, 
+gs_neig2 <- cropGraphSpace(gs_neig,
+                           xmin = 0.45, xmax = 0.6,
                            ymin = 0.2, ymax = 0.35)
 gs_neig2 <- normalizeGraphSpace(gs_neig2, mar = 0, norm.geometry = TRUE)
 
@@ -147,14 +156,13 @@ g <- ggplot(gs_neig2) +
 g
 ggsave("images/DirectNeighbors_Edges1.png",g,
        height = 4,width = 7,units = "in",dpi = 120)
-
 ```
 
 ## Change edge rendering
 
-Set the edge arrow type and save the resulting segmentation view.
+Set the edge `arrowType` attribute, render the edges in black, and save the resulting view.
 
-```{r step-08, eval = TRUE, echo = TRUE}
+```{r step-10, eval = TRUE, echo = TRUE}
 gs_edge_attr(gs_neig2,"arrowType") <- "13|-|13"
 
 g<- ggplot(gs_neig2) +
@@ -166,14 +174,11 @@ g
 
 ggsave("images/DirectNeighbors_Edges2.png",g,
        height = 4,width = 7,units = "in",dpi = 120)
-
 ```
 
-## Adjust node rendering
+Add the transparent node layer used in the source script and save the third edge view.
 
-Add the transparent node layer used in the source script and save the final view.
-
-```{r step-09, eval = TRUE, echo = TRUE}
+```{r step-11, eval = TRUE, echo = TRUE}
 g<-ggplot(gs_neig2) +
   geom_sf(mapping = aes(geometry = geometry,fill = log2(Slc17a7 + 1))) +
   scale_fill_continuous(palette = cpal, limits = data_range) +
@@ -181,7 +186,121 @@ g<-ggplot(gs_neig2) +
   geom_edgespace(color="black",alpha=0.8)+
   my_theme
 g
-
 ggsave("images/DirectNeighbors_Edges3.png",g,
+       height = 4,width = 7,units = "in",dpi = 120)
+```
+
+## Why centroid-to-centroid edges can be misleading
+
+However, this visualization is not ideal for representing physical contact between neighboring cells because the edges generated by `geom_edgespace()` connect the centroids of adjacent cells.
+
+Cell boundaries can be irregular, and neighboring cells can differ substantially in size. Moreover, some cells share only a small portion of their boundaries (cell membranes). Consequently, edges connecting cell centroids may extend beyond the boundaries of the corresponding cell pair or pass through regions not occupied by either cell.
+
+## Identify a point in the contact region
+
+To identify a point within the contact region between two neighboring cells, first buffer both cell polygons by the `proximity_threshold` distance and compute their intersection using `sf::st_intersection()`. Then use `sf::st_point_on_surface()` to obtain a representative point within the resulting intersection geometry.
+
+Begin by cropping the graph again, this time retaining its pre-normalized geometry so that the change in spatial scale can be measured.
+
+```{r step-12, eval = TRUE, echo = TRUE}
+gs_neig2 <- cropGraphSpace(gs_neig,
+                           xmin = 0.45, xmax = 0.6,
+                           ymin = 0.2, ymax = 0.35)
+```
+
+## Rescale the proximity threshold
+
+When the cropped `GraphSpace` object is re-normalized using the `normalizeGraphSpace()` function, the `proximity_threshold` parameter must also be rescaled. The rescaling factor can be calculated by comparing the area of each cropped cell polygon before and after normalization.
+
+Let \(A_i^{\mathrm{before}}\) and \(A_i^{\mathrm{after}}\) denote the areas of polygon \(i\) before and after normalization. If normalization applies an isotropic linear scale factor \(s_i\), lengths are multiplied by \(s_i\), while areas are multiplied by \(s_i^2\):
+
+\[
+A_i^{\mathrm{after}} = s_i^2 A_i^{\mathrm{before}}.
+\]
+
+Therefore, the linear scale factor obtained from the area ratio is
+
+\[
+s_i = \sqrt{\frac{A_i^{\mathrm{after}}}{A_i^{\mathrm{before}}}}.
+\]
+
+The script uses the median scale factor across polygons. Thus, the threshold in normalized coordinates is
+
+\[
+d_{\mathrm{normalized}}
+= d_{\mathrm{original}}
+  \operatorname{median}_i\!\left(
+    \sqrt{\frac{A_i^{\mathrm{after}}}{A_i^{\mathrm{before}}}}
+  \right).
+\]
+
+With the `GraphSpace` nodes available in their pre-normalized coordinates, save their simple-feature representation.
+
+```{r step-13, eval = TRUE, echo = TRUE}
+before <- sf::st_as_sf(gs_neig2[["nodes"]])
+```
+
+Proceed with the re-normalization step.
+
+```{r step-14, eval = TRUE, echo = TRUE}
+gs_neig2 <- normalizeGraphSpace(gs_neig2, mar = 0, norm.geometry = TRUE)
+```
+
+Retrieve the `GraphSpace` nodes after re-normalization. Match by node name to ensure that the before and after rows refer to the same polygons.
+
+```{r step-15, eval = TRUE, echo = TRUE}
+after  <- sf::st_as_sf(gs_neig2[["nodes"]])
+before <- before[match(after$name, before$name), ]
+```
+
+Using the areas of the `GraphSpace` nodes before and after re-normalization, calculate their ratio.
+
+```{r step-16, eval = TRUE, echo = TRUE}
+area_ratio <- as.numeric(sf::st_area(after) / sf::st_area(before))
+```
+
+Use the area ratio to rescale the `proximity_threshold` parameter so that it matches the normalized spatial coordinates of the cropped region.
+
+```{r step-17, eval = TRUE, echo = TRUE}
+proximity_threshold_zoom <- proximity_threshold * median(sqrt(area_ratio))
+
+proximity_threshold_zoom/proximity_threshold
+# 6.920188
+```
+
+The `proximity_threshold` parameter was multiplied by a scaling factor of approximately 6.92 (about 7) to match the normalized spatial coordinates of the cropped region. In this example, the corresponding normalized threshold is approximately \(0.0005 \times 6.920188 = 0.003460094\).
+
+Clear the temporary `before` and `after` datasets.
+
+```{r step-18, eval = TRUE, echo = TRUE}
+# Clear 'before' and 'after' datasets
+rm(before,after)
+```
+
+## Calculate and visualize contact points
+
+For every neighbor edge, select its two cell polygons, buffer both polygons using the rescaled threshold, and intersect the corresponding buffered geometries element by element. `st_point_on_surface()` then returns a representative point within each intersection geometry, which is stored as the `intersect_point` edge attribute.
+
+```{r step-19, eval = TRUE, echo = TRUE}
+gs_edge_attr(gs_neig2, "intersect_point") <-
+  st_intersection(gs_neig2[["nodes"]][gs_neig2[["edges"]]$name1,]$geometry %>%
+                    sf::st_buffer(dist=proximity_threshold_zoom),
+                  gs_neig2[["nodes"]][gs_neig2[["edges"]]$name2,]$geometry %>%
+                    sf::st_buffer(dist=proximity_threshold_zoom),
+                  by_element=TRUE) %>%
+  st_point_on_surface()
+```
+
+Finally, plot the cell segmentation and add the representative contact points in black.
+
+```{r step-20, eval = TRUE, echo = TRUE}
+g <- ggplot(gs_neig2) +
+  geom_sf(mapping = aes(geometry = geometry,fill = log2(Slc17a7 + 1))) +
+  scale_fill_continuous(palette = cpal, limits = data_range) +
+  geom_sf(data=gs_neig2[["edges"]]$intersect_point,color="black",alpha=1)+
+  my_theme+
+  labs(title = "Point of physical contact between neighboring cells")
+g
+ggsave("images/DirectNeighbors_Edges_PointOfContact.png",g,
        height = 4,width = 7,units = "in",dpi = 120)
 ```
