@@ -51,7 +51,10 @@ The book consolidates shared setup, computes spatial metrics and candidate
 distances once, preserves raw-count correlations as exploratory analyses,
 uses symmetric correlation color limits, applies one significance rule to
 both correlation methods, compares edges by cell identity, and stores complete
-plot objects in a list for the distance animation. Spatial figures use explicit
-`ggplot(GraphSpace)` calls with `geom_nodespace()`, `geom_edgespace()`, and
-`geom_sf()` following the source scripts and vignettes. Existing vignettes and
-the project's original image files are not edited by the render.
+plot objects in a list for the distance animation. The direct-neighbor chapter
+also rescales the proximity threshold after coordinate normalization and marks
+a representative point in each buffered cell-contact region. Spatial figures
+use explicit `ggplot(GraphSpace)` calls with `geom_nodespace()`,
+`geom_edgespace()`, and `geom_sf()` following the source scripts and vignettes.
+Existing vignettes and the project's original image files are not edited by
+the render.
