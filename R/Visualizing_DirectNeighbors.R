@@ -156,3 +156,7 @@ g <- ggplot(gs_neig2) +
 g
 ggsave("images/DirectNeighbors_Edges_PointOfContact.png",g,
        height = 4,width = 7,units = "in",dpi = 120)
+
+
+# Save gs_neig2 with the intersection points
+saveRDS(gs_neig2,"data/gs_neig2.rds")
